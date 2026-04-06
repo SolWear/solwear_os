@@ -93,7 +93,7 @@ Requires the `picotool` USB driver. On Windows you may need to use [Zadig](https
 
 ### Companion debugger
 
-The [SolWear_ServiceTool](https://github.com/SolWear/SolWear_ServiceTool) desktop app pairs with this firmware over USB serial — live logs, battery dashboard, settings editor, and one-click UF2 flashing.
+The [solwear_service_tool](https://github.com/SolWear/solwear_service_tool) desktop app pairs with this firmware over USB serial — live logs, battery dashboard, settings editor, and one-click UF2 flashing.
 
 ## Project Layout
 
