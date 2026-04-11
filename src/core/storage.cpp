@@ -36,6 +36,7 @@ bool Storage::loadSettings(Settings& s) {
     if ((p = strstr(buf, "\"watchFace\":")))   sscanf(p + 12, "%hhu", &s.watchFaceIndex);
     if ((p = strstr(buf, "\"wallpaper\":")))   sscanf(p + 12, "%hhu", &s.wallpaperIndex);
     if ((p = strstr(buf, "\"stepGoal\":")))    sscanf(p + 11, "%hu", &s.stepGoal);
+    if ((p = strstr(buf, "\"batteryDivider\":"))) sscanf(p + 17, "%f", &s.batteryDivider);
 
     return true;
 }
@@ -46,7 +47,7 @@ bool Storage::saveSettings(const Settings& s) {
     File f = LittleFS.open("/settings.json", "w");
     if (!f) return false;
 
-    char buf[256];
+    char buf[320];
     snprintf(buf, sizeof(buf),
         "{\n"
         "  \"brightness\": %u,\n"
@@ -54,10 +55,11 @@ bool Storage::saveSettings(const Settings& s) {
         "  \"vibration\": %d,\n"
         "  \"watchFace\": %u,\n"
         "  \"wallpaper\": %u,\n"
-        "  \"stepGoal\": %u\n"
+        "  \"stepGoal\": %u,\n"
+        "  \"batteryDivider\": %.4f\n"
         "}\n",
         s.brightness, s.soundEnabled ? 1 : 0, s.vibrationEnabled ? 1 : 0,
-        s.watchFaceIndex, s.wallpaperIndex, s.stepGoal);
+        s.watchFaceIndex, s.wallpaperIndex, s.stepGoal, s.batteryDivider);
 
     f.print(buf);
     f.close();

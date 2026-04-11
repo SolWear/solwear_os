@@ -2,6 +2,19 @@
 
 HalBattery battery;
 
+uint16_t HalBattery::readStableRawAdc_() {
+    // VSYS/3 on GP29 is a relatively high-impedance source; the first read can
+    // be biased low. Throw away one conversion, then average several samples.
+    (void)analogRead(PIN_BATTERY_ADC);
+    uint32_t sum = 0;
+    constexpr uint8_t kSamples = 8;
+    for (uint8_t i = 0; i < kSamples; ++i) {
+        sum += analogRead(PIN_BATTERY_ADC);
+        delayMicroseconds(150);
+    }
+    return (uint16_t)(sum / kSamples);
+}
+
 // LiPo discharge curve (voltage -> percentage)
 static uint8_t voltageToPercent(float v) {
     if (v >= 4.20f) return 100;
@@ -24,8 +37,8 @@ void HalBattery::init() {
 }
 
 void HalBattery::update() {
-    uint16_t raw = analogRead(PIN_BATTERY_ADC);
-    float v = (raw / 4095.0f) * 3.3f * BATTERY_DIVIDER;
+    rawAdc_ = readStableRawAdc_();
+    float v = (rawAdc_ / 4095.0f) * 3.3f * divider_;
 
     if (firstRead_) {
         smoothedAdc_ = v;
@@ -38,6 +51,29 @@ void HalBattery::update() {
     voltage_ = smoothedAdc_;
     percent_ = voltageToPercent(voltage_);
 
-    // Simple charging detection: voltage above 4.2V suggests charger connected
-    charging_ = (voltage_ > 4.25f);
+    // Debounced charging detection: flip only after 5 consecutive agreeing samples.
+    bool sample = (voltage_ > 4.25f);
+    if (sample == chargingCandidate_) {
+        if (chargingDebounce_ < 5) chargingDebounce_++;
+        if (chargingDebounce_ >= 5 && charging_ != sample) {
+            charging_ = sample;
+        }
+    } else {
+        chargingCandidate_ = sample;
+        chargingDebounce_ = 1;
+    }
+}
+
+float HalBattery::calibrate(float measuredVoltage) {
+    if (rawAdc_ == 0 || measuredVoltage <= 0.1f) return 0.0f;
+    // measured = (raw/4095) * 3.3 * divider  →  divider = measured / ((raw/4095)*3.3)
+    float adcVolts = (rawAdc_ / 4095.0f) * 3.3f;
+    if (adcVolts < 0.05f) return 0.0f;
+    float newDivider = measuredVoltage / adcVolts;
+    if (newDivider < 0.5f || newDivider > 16.0f) return 0.0f;
+    divider_ = newDivider;
+    // Force the smoothing filter to re-converge from the new reading.
+    firstRead_ = true;
+    update();
+    return divider_;
 }

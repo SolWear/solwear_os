@@ -76,6 +76,11 @@
 pio run
 ```
 
+### Prototype build targets
+
+- `env:solwearos` — current RP2040 + LCD production path
+- `env:prototype_d_esp32_eink154` — Prototype D scaffold (ESP32 v2 + Waveshare e-ink 1.54 pin profile)
+
 ### Flash via UF2 (recommended)
 
 1. Hold the **BOOTSEL** button on the watch and plug it into USB.
@@ -153,8 +158,26 @@ Plenty of headroom for crypto libs, more apps, and BLE companion sync.
 Every 5 seconds the firmware emits a single line over USB CDC for the service tool to parse:
 
 ```
-[STATUS] batt=87 volt=4.05 heap=180432 steps=123 uptime=456 charging=0
+[STATUS] batt=87 volt=4.05 heap=180432 steps=123 uptime=456 charging=0 temp=38.5 proto=prototype-a-rp2040-lcd169 mcu=rp2040 display=st7789-240x280 caps=status,watch-control,apps,diagnostics,uf2
 ```
+
+## Service-Tool Commands
+
+The firmware accepts control commands over USB serial (one command per line):
+
+- `status now`
+- `bri <0-100>`
+- `buzz test|buzz alarm|buzz on|buzz off`
+- `diag on|diag off`
+- `app <watchface|home|settings|wallet|nfc|health|game|alarm|stats|charging>`
+- `nav home|back`
+- `set watchface <0-2>`
+- `set wallpaper <n>`
+- `set stepgoal <1000-50000>`
+- `reboot bootsel`
+- `power off`
+- `version`
+- `help`
 
 ## Roadmap
 

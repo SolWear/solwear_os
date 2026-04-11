@@ -19,6 +19,8 @@ public:
     TFT_eSprite& getCanvas() { return canvas_; }
 
     void pushCanvas();
+    void runPanelProbe();
+    void runPanelSweep();
     void setBrightness(uint8_t percent);
     uint8_t getBrightness() const { return brightness_; }
     void sleep();
@@ -32,6 +34,7 @@ private:
     bool awake_ = true;
     bool ready_ = false;       // tft_ + sprite both initialized successfully
     bool stripMode_ = false;   // true => sprite is one strip; pushCanvas tiles it
+    bool lowColorMode_ = false; // true => full-frame sprite is 8-bit (fallback)
 };
 
 extern HalDisplay display;

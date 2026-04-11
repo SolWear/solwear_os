@@ -20,16 +20,16 @@ void HalBuzzer::init() {
 void HalBuzzer::tone(uint16_t freqHz, uint16_t durationMs) {
     if (!enabled_) return;
     if (freqHz > 0) {
-        analogWriteFreq(freqHz);
-        analogWrite(PIN_BUZZER, 128);  // 50% duty cycle
+        ::tone(PIN_BUZZER, freqHz);
     } else {
-        analogWrite(PIN_BUZZER, 0);
+        ::noTone(PIN_BUZZER);
     }
     noteStartTime_ = millis();
 }
 
 void HalBuzzer::noTone() {
-    analogWrite(PIN_BUZZER, 0);
+    ::noTone(PIN_BUZZER);
+    digitalWrite(PIN_BUZZER, LOW);
     playing_ = false;
 }
 

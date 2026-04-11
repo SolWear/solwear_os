@@ -1,11 +1,50 @@
 #include "hal_power.h"
 #include "hal_display.h"
+#include "pico/stdlib.h"
+#include "hardware/clocks.h"
 
 HalPower power;
+
+// Keep a fixed clock in diagnostics firmware to avoid USB CDC instability
+// seen when dynamically changing RP2040 sys clock.
+static constexpr uint32_t CLK_NORMAL_KHZ   = 64000;
 
 void HalPower::init() {
     lastActivityTime_ = millis();
     state_ = PowerState::ACTIVE;
+}
+
+void HalPower::holdOn() {
+    const uint8_t latchPins[] = {14, 15, 18, 19};
+    for (uint8_t pin : latchPins) {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, HIGH);
+    }
+}
+
+void HalPower::holdOff() {
+    // WARNING: this kills the 3.3V rail. The MCU will lose power.
+    const uint8_t latchPins[] = {14, 15, 18, 19};
+    for (uint8_t pin : latchPins) {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, LOW);
+    }
+}
+
+void HalPower::onTemperatureUpdate(float tempC) {
+    // In this recovery phase we only clamp brightness at high temperature.
+    // Dynamic clock switching caused COM instability on this board.
+    if (tempC > 65.0f) {
+        if (state_ != PowerState::SLEEP) {
+            transitionTo(PowerState::SLEEP);
+        }
+    } else if (tempC > 55.0f && !throttled_) {
+        throttled_ = true;
+        display.setBrightness(30);
+    } else if (tempC < 50.0f && throttled_) {
+        throttled_ = false;
+        display.setBrightness(savedBrightness_);
+    }
 }
 
 void HalPower::registerActivity() {
@@ -15,7 +54,26 @@ void HalPower::registerActivity() {
     }
 }
 
+void HalPower::setDiagnosticsMode(bool enabled) {
+    diagnosticsMode_ = enabled;
+    if (diagnosticsMode_) {
+        set_sys_clock_khz(CLK_NORMAL_KHZ, true);
+        display.wake();
+        display.setBrightness(100);
+        lastActivityTime_ = millis();
+    } else {
+        display.setBrightness(savedBrightness_);
+        lastActivityTime_ = millis();
+    }
+}
+
 void HalPower::update() {
+    if (diagnosticsMode_) {
+        // Hold the panel fully on while probing hardware.
+        lastActivityTime_ = millis();
+        return;
+    }
+
     uint32_t elapsed = millis() - lastActivityTime_;
 
     switch (state_) {
@@ -44,6 +102,8 @@ void HalPower::transitionTo(PowerState newState) {
 
     switch (newState) {
         case PowerState::ACTIVE:
+            // Restore clock first so the rest of init runs at full speed.
+            set_sys_clock_khz(CLK_NORMAL_KHZ, true);
             display.wake();
             display.setBrightness(savedBrightness_);
             break;
@@ -51,6 +111,7 @@ void HalPower::transitionTo(PowerState newState) {
         case PowerState::DIMMED:
             savedBrightness_ = display.getBrightness();
             display.setBrightness(BRIGHTNESS_DIM);
+            // Stay at normal clock for snappy wake; just dim the screen.
             break;
 
         case PowerState::SLEEP:

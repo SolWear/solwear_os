@@ -1,6 +1,7 @@
 #include "app_stats.h"
 #include "../hal/hal_battery.h"
 #include "../hal/hal_imu.h"
+#include "../hal/hal_thermal.h"
 #include "../core/screen_manager.h"
 #include "../ui/ui_common.h"
 #include "../ui/status_bar.h"
@@ -38,8 +39,9 @@ void StatsApp::update(uint32_t dt) {
     refreshMs_ += dt;
     if (refreshMs_ >= 500) {
         refreshMs_ = 0;
-        // Force a battery sample so the user sees fresh numbers in the stats UI.
+        // Force fresh samples so the user sees live numbers in the stats UI.
         battery.update();
+        thermal.update();
     }
 }
 
@@ -151,7 +153,19 @@ void StatsApp::renderSystemPage(TFT_eSprite& canvas) {
     y += 20;
 
     // Steps today
+    canvas.setTextColor(Theme::TEXT_SECONDARY);
     snprintf(buf, sizeof(buf), "Steps: %lu", (unsigned long)imu.getSteps());
+    canvas.drawString(buf, Theme::PADDING, y, 2);
+    y += 20;
+
+    // Temperature (RP2040 internal sensor) — color coded
+    float t = thermal.getTemperatureC();
+    uint16_t tempColor = Theme::ACCENT_GREEN;
+    if (t > 65.0f)      tempColor = Theme::DANGER;
+    else if (t > 50.0f) tempColor = 0xFC00; // orange
+    else if (t > 40.0f) tempColor = Theme::WARNING;
+    canvas.setTextColor(tempColor);
+    snprintf(buf, sizeof(buf), "Temp: %.1f C", t);
     canvas.drawString(buf, Theme::PADDING, y, 2);
     y += 20;
 

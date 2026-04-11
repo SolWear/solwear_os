@@ -10,6 +10,7 @@ struct Settings {
     uint8_t watchFaceIndex = 0;
     uint8_t wallpaperIndex = 0;
     uint16_t stepGoal = DEFAULT_STEP_GOAL;
+    float batteryDivider = BATTERY_DIVIDER;  // Per-device calibration
 };
 
 struct WalletData {

@@ -5,6 +5,23 @@
 // Waveshare RP2040-Touch-LCD-1.69
 // ============================================================
 
+// --- Prototype identity (override via build_flags per environment) ---
+#ifndef SOLWEAR_PROTO_ID
+#define SOLWEAR_PROTO_ID "prototype-a-rp2040-lcd169"
+#endif
+
+#ifndef SOLWEAR_TARGET_MCU
+#define SOLWEAR_TARGET_MCU "rp2040"
+#endif
+
+#ifndef SOLWEAR_TARGET_DISPLAY
+#define SOLWEAR_TARGET_DISPLAY "st7789-240x280"
+#endif
+
+#ifndef SOLWEAR_PROTO_CAPS
+#define SOLWEAR_PROTO_CAPS "status,watch-control,apps,diagnostics,uf2"
+#endif
+
 // --- Display (ST7789V2 via SPI1) ---
 #define PIN_LCD_DC      8
 #define PIN_LCD_CS      9
@@ -13,6 +30,28 @@
 #define PIN_LCD_MISO    12
 #define PIN_LCD_RST     13
 #define PIN_LCD_BL      25
+
+// --- E-ink profile pins (Prototype D, ESP32 v2 + Waveshare e-ink 1.54) ---
+// These are currently used for diagnostics / profile metadata and future
+// display backend work; primary LCD firmware path remains unchanged.
+#ifndef PIN_EINK_DIN
+#define PIN_EINK_DIN    15
+#endif
+#ifndef PIN_EINK_CLK
+#define PIN_EINK_CLK    2
+#endif
+#ifndef PIN_EINK_CS
+#define PIN_EINK_CS     4
+#endif
+#ifndef PIN_EINK_DC
+#define PIN_EINK_DC     5
+#endif
+#ifndef PIN_EINK_RST
+#define PIN_EINK_RST    18
+#endif
+#ifndef PIN_EINK_BUSY
+#define PIN_EINK_BUSY   19
+#endif
 
 #define SCREEN_WIDTH    240
 #define SCREEN_HEIGHT   280
@@ -42,6 +81,16 @@
 
 // --- Buzzer (PWM) ---
 #define PIN_BUZZER      20
+
+// --- Soft power latch ---
+// MCU must drive this HIGH to keep the 3.3V rail enabled after the
+// power button is released. Default GP14. If the watch still dies on
+// button release, try 15 → 18 → 19 (reflash, retry).
+#define PIN_POWER_HOLD  14
+// Optional separate GPIO for reading physical power-key state.
+// On this watch, power key is on the same net as power hold (GP14 by default).
+// Key is assumed active LOW.
+#define PIN_POWER_KEY   PIN_POWER_HOLD
 
 // --- UART (debug / future BLE) ---
 #define PIN_UART_TX     0
@@ -74,6 +123,7 @@
 #define BATTERY_POLL_MS     30000   // 30 seconds
 #define DISPLAY_TIMEOUT_MS  15000   // sleep after 15s inactivity
 #define DIM_TIMEOUT_MS      10000   // dim after 10s inactivity
+#define POWER_HOLD_OFF_MS   10000   // long-press power button to hard-off
 #define TARGET_FPS          30
 #define FRAME_TIME_MS       (1000 / TARGET_FPS)
 
@@ -92,7 +142,7 @@
 #define BATTERY_LOW_V       3.4f
 #define BATTERY_CRITICAL_V  3.2f
 #define BATTERY_EMPTY_V     3.0f
-#define BATTERY_DIVIDER     2.0f    // voltage divider ratio
+#define BATTERY_DIVIDER     3.0f    // voltage divider ratio (200K/100K on Waveshare board)
 
 // ============================================================
 // Screen Transition
@@ -140,8 +190,8 @@
 // ============================================================
 // Brightness
 // ============================================================
-#define BRIGHTNESS_DEFAULT  80
-#define BRIGHTNESS_DIM      40
+#define BRIGHTNESS_DEFAULT  50
+#define BRIGHTNESS_DIM      20
 #define BRIGHTNESS_MIN      10
 #define BRIGHTNESS_MAX      100
 
