@@ -41,7 +41,7 @@ void WatchFaceApp::render(TFT_eSprite& canvas) {
 
     switch (style_) {
         case WatchFaceStyle::DIGITAL:  renderDigital(canvas);  break;
-        case WatchFaceStyle::ANALOG:   renderAnalog(canvas);   break;
+        case WatchFaceStyle::ANALOG_FACE: renderAnalog(canvas); break;
         case WatchFaceStyle::MINIMAL:  renderMinimal(canvas);  break;
     }
 

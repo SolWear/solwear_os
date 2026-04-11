@@ -5,7 +5,7 @@
 
 enum class WatchFaceStyle : uint8_t {
     DIGITAL = 0,
-    ANALOG,
+    ANALOG_FACE,
     MINIMAL,
     STYLE_COUNT
 };

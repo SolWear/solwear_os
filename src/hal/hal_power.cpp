@@ -1,7 +1,9 @@
 #include "hal_power.h"
 #include "hal_display.h"
+#if defined(ARDUINO_ARCH_RP2040)
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
+#endif
 
 HalPower power;
 
@@ -38,12 +40,14 @@ void HalPower::onTemperatureUpdate(float tempC) {
         if (state_ != PowerState::SLEEP) {
             transitionTo(PowerState::SLEEP);
         }
+#if !SOLWEAR_EINK_TARGET
     } else if (tempC > 55.0f && !throttled_) {
         throttled_ = true;
         display.setBrightness(30);
     } else if (tempC < 50.0f && throttled_) {
         throttled_ = false;
         display.setBrightness(savedBrightness_);
+#endif
     }
 }
 
@@ -57,12 +61,18 @@ void HalPower::registerActivity() {
 void HalPower::setDiagnosticsMode(bool enabled) {
     diagnosticsMode_ = enabled;
     if (diagnosticsMode_) {
+#if defined(ARDUINO_ARCH_RP2040)
         set_sys_clock_khz(CLK_NORMAL_KHZ, true);
+#endif
+#if !SOLWEAR_EINK_TARGET
         display.wake();
         display.setBrightness(100);
+#endif
         lastActivityTime_ = millis();
     } else {
+#if !SOLWEAR_EINK_TARGET
         display.setBrightness(savedBrightness_);
+#endif
         lastActivityTime_ = millis();
     }
 }
@@ -103,19 +113,27 @@ void HalPower::transitionTo(PowerState newState) {
     switch (newState) {
         case PowerState::ACTIVE:
             // Restore clock first so the rest of init runs at full speed.
+#if defined(ARDUINO_ARCH_RP2040)
             set_sys_clock_khz(CLK_NORMAL_KHZ, true);
+#endif
+#if !SOLWEAR_EINK_TARGET
             display.wake();
             display.setBrightness(savedBrightness_);
+#endif
             break;
 
         case PowerState::DIMMED:
+#if !SOLWEAR_EINK_TARGET
             savedBrightness_ = display.getBrightness();
             display.setBrightness(BRIGHTNESS_DIM);
+#endif
             // Stay at normal clock for snappy wake; just dim the screen.
             break;
 
         case PowerState::SLEEP:
+#if !SOLWEAR_EINK_TARGET
             display.sleep();
+#endif
             break;
     }
 

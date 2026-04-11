@@ -16,6 +16,11 @@ void SystemClock::update() {
     unixEpoch_ += elapsed / 1000;
 }
 
+void SystemClock::setUnixEpoch(uint32_t epoch) {
+    unixEpoch_ = epoch;
+    lastMillis_ = millis();
+}
+
 void SystemClock::setTime(uint16_t year, uint8_t month, uint8_t day,
                            uint8_t hour, uint8_t minute, uint8_t second) {
     // Convert to approximate Unix epoch

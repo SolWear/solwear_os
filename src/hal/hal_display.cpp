@@ -11,6 +11,12 @@ struct ProbePins {
 
 static ProbePins g_probePins = {PIN_LCD_CS, PIN_LCD_DC, PIN_LCD_RST};
 
+#if defined(ARDUINO_ARCH_RP2040)
+#define PANEL_SPI SPI1
+#else
+#define PANEL_SPI SPI
+#endif
+
 static inline void panelSelect() {
     digitalWrite(g_probePins.cs, LOW);
 }
@@ -22,14 +28,14 @@ static inline void panelDeselect() {
 static inline void panelWriteCommand(uint8_t cmd) {
     digitalWrite(g_probePins.dc, LOW);
     panelSelect();
-    SPI1.transfer(cmd);
+    PANEL_SPI.transfer(cmd);
     panelDeselect();
 }
 
 static inline void panelWriteDataByte(uint8_t data) {
     digitalWrite(g_probePins.dc, HIGH);
     panelSelect();
-    SPI1.transfer(data);
+    PANEL_SPI.transfer(data);
     panelDeselect();
 }
 
@@ -62,8 +68,8 @@ static void panelFillColor(uint16_t color565) {
     digitalWrite(g_probePins.dc, HIGH);
     panelSelect();
     for (uint32_t i = 0; i < (uint32_t)SCREEN_WIDTH * (uint32_t)SCREEN_HEIGHT; ++i) {
-        SPI1.transfer(hi);
-        SPI1.transfer(lo);
+        PANEL_SPI.transfer(hi);
+        PANEL_SPI.transfer(lo);
     }
     panelDeselect();
 }
@@ -183,11 +189,15 @@ void HalDisplay::init() {
 
     // Force SPI1 pin routing before TFT_eSPI init for RP2040 variants where
     // implicit routing is unreliable.
+#if defined(ARDUINO_ARCH_RP2040)
     SPI1.setRX(PIN_LCD_MISO);
     SPI1.setTX(PIN_LCD_MOSI);
     SPI1.setSCK(PIN_LCD_CLK);
     SPI1.setCS(PIN_LCD_CS);
     SPI1.begin();
+#else
+    SPI.begin(PIN_LCD_CLK, PIN_LCD_MISO, PIN_LCD_MOSI, PIN_LCD_CS);
+#endif
 
     Serial.printf("[HAL] Display pins cs=%d dc=%d rst=%d bl=%d sck=%d mosi=%d miso=%d\n",
                   PIN_LCD_CS, PIN_LCD_DC, PIN_LCD_RST, PIN_LCD_BL,
@@ -259,7 +269,7 @@ void HalDisplay::init() {
 void HalDisplay::runPanelProbe() {
     Serial.println("[HAL] Display probe: raw ST7789 fill test");
 
-    SPI1.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    PANEL_SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     panelRawResetAndInit();
     panelFillColor(0xF800); // red
     delay(150);
@@ -268,7 +278,7 @@ void HalDisplay::runPanelProbe() {
     panelFillColor(0x001F); // blue
     delay(150);
     panelFillColor(0x0000); // black
-    SPI1.endTransaction();
+    PANEL_SPI.endTransaction();
 
     Serial.println("[HAL] Display probe: done");
 }
@@ -282,7 +292,7 @@ void HalDisplay::runPanelSweep() {
     };
 
     Serial.println("[HAL] Display sweep: trying pin profiles");
-    SPI1.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    PANEL_SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     for (uint8_t i = 0; i < (sizeof(profiles) / sizeof(profiles[0])); ++i) {
         configureProbePins(profiles[i]);
         Serial.printf("[HAL] Display sweep profile %u: cs=%u dc=%u rst=%u\n",
@@ -300,7 +310,7 @@ void HalDisplay::runPanelSweep() {
         panelFillColor(0x0000);
         delay(120);
     }
-    SPI1.endTransaction();
+    PANEL_SPI.endTransaction();
 
     // Restore configured/default control pin profile.
     configureProbePins({PIN_LCD_CS, PIN_LCD_DC, PIN_LCD_RST});

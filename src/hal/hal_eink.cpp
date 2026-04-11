@@ -1,0 +1,278 @@
+#include "hal_eink.h"
+#include <string.h>
+
+HalEink eink;
+
+void HalEink::sendCommand(uint8_t cmd) {
+    digitalWrite(PIN_EINK_DC, LOW);
+    digitalWrite(PIN_EINK_CS, LOW);
+    SPI.transfer(cmd);
+    digitalWrite(PIN_EINK_CS, HIGH);
+}
+
+void HalEink::sendData(uint8_t data) {
+    digitalWrite(PIN_EINK_DC, HIGH);
+    digitalWrite(PIN_EINK_CS, LOW);
+    SPI.transfer(data);
+    digitalWrite(PIN_EINK_CS, HIGH);
+}
+
+void HalEink::waitBusy(const char* stage) {
+    const uint32_t start = millis();
+    while (digitalRead(PIN_EINK_BUSY) == HIGH) {
+        if (millis() - start > 4000) {
+            Serial.printf("[EINK] busy timeout at %s\n", stage);
+            return;
+        }
+        delay(10);
+    }
+}
+
+void HalEink::setRamWindow() {
+    // X address from 0 to 24 (200 / 8 - 1)
+    sendCommand(0x44);
+    sendData(0x00);
+    sendData((WIDTH / 8) - 1);
+
+    // Y address from 0 to 199
+    sendCommand(0x45);
+    sendData((HEIGHT - 1) & 0xFF);
+    sendData(((HEIGHT - 1) >> 8) & 0xFF);
+    sendData(0x00);
+    sendData(0x00);
+}
+
+void HalEink::setRamPointer() {
+    sendCommand(0x4E);
+    sendData(0x00);
+
+    sendCommand(0x4F);
+    sendData((HEIGHT - 1) & 0xFF);
+    sendData(((HEIGHT - 1) >> 8) & 0xFF);
+    waitBusy("set-ram-pointer");
+}
+
+void HalEink::refresh() {
+    sendCommand(0x22);
+    sendData(0xF7);
+    sendCommand(0x20);
+    waitBusy("refresh");
+}
+
+void HalEink::beginFrame(bool white) {
+    memset(frameBuf_, white ? 0xFF : 0x00, sizeof(frameBuf_));
+}
+
+void HalEink::drawPixel(int16_t x, int16_t y, bool black) {
+    if (x < 0 || y < 0 || x >= (int16_t)WIDTH || y >= (int16_t)HEIGHT) {
+        return;
+    }
+    const uint16_t index = (uint16_t)y * (WIDTH / 8) + (uint16_t)(x / 8);
+    const uint8_t mask = (uint8_t)(0x80 >> (x & 7));
+    if (black) {
+        frameBuf_[index] &= (uint8_t)~mask;
+    } else {
+        frameBuf_[index] |= mask;
+    }
+}
+
+void HalEink::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, bool black) {
+    int16_t dx = abs(x1 - x0);
+    int16_t sx = x0 < x1 ? 1 : -1;
+    int16_t dy = -abs(y1 - y0);
+    int16_t sy = y0 < y1 ? 1 : -1;
+    int16_t err = dx + dy;
+
+    while (true) {
+        drawPixel(x0, y0, black);
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        const int16_t e2 = (int16_t)(2 * err);
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+void HalEink::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, bool black) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    drawLine(x, y, x + w - 1, y, black);
+    drawLine(x, y + h - 1, x + w - 1, y + h - 1, black);
+    drawLine(x, y, x, y + h - 1, black);
+    drawLine(x + w - 1, y, x + w - 1, y + h - 1, black);
+}
+
+void HalEink::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, bool black) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    for (int16_t yy = y; yy < y + h; ++yy) {
+        drawLine(x, yy, x + w - 1, yy, black);
+    }
+}
+
+void HalEink::drawCircle(int16_t x0, int16_t y0, int16_t r, bool black) {
+    if (r <= 0) {
+        return;
+    }
+
+    int16_t x = r;
+    int16_t y = 0;
+    int16_t err = 0;
+
+    while (x >= y) {
+        drawPixel(x0 + x, y0 + y, black);
+        drawPixel(x0 + y, y0 + x, black);
+        drawPixel(x0 - y, y0 + x, black);
+        drawPixel(x0 - x, y0 + y, black);
+        drawPixel(x0 - x, y0 - y, black);
+        drawPixel(x0 - y, y0 - x, black);
+        drawPixel(x0 + y, y0 - x, black);
+        drawPixel(x0 + x, y0 - y, black);
+
+        if (err <= 0) {
+            y++;
+            err += 2 * y + 1;
+        }
+        if (err > 0) {
+            x--;
+            err -= 2 * x + 1;
+        }
+    }
+}
+
+void HalEink::present(bool antiGhost) {
+    if (!ready_) return;
+
+    if (antiGhost && (presentCount_ % 4 == 0)) {
+        scrub();
+    }
+
+    setRamWindow();
+    setRamPointer();
+
+    sendCommand(0x24);
+    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
+        sendData(frameBuf_[i]);
+    }
+
+    refresh();
+    presentCount_++;
+}
+
+void HalEink::scrub() {
+    if (!ready_) return;
+
+    // Black -> White cleanup reduces ghosting on partial-content updates.
+    memset(frameBuf_, 0x00, sizeof(frameBuf_));
+    setRamWindow();
+    setRamPointer();
+    sendCommand(0x24);
+    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
+        sendData(frameBuf_[i]);
+    }
+    refresh();
+
+    memset(frameBuf_, 0xFF, sizeof(frameBuf_));
+    setRamWindow();
+    setRamPointer();
+    sendCommand(0x24);
+    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
+        sendData(frameBuf_[i]);
+    }
+    refresh();
+}
+
+void HalEink::init() {
+#if !SOLWEAR_EINK_TARGET
+    ready_ = false;
+    return;
+#else
+    pinMode(PIN_EINK_CS, OUTPUT);
+    pinMode(PIN_EINK_DC, OUTPUT);
+    pinMode(PIN_EINK_RST, OUTPUT);
+    pinMode(PIN_EINK_BUSY, INPUT);
+
+    digitalWrite(PIN_EINK_CS, HIGH);
+    digitalWrite(PIN_EINK_DC, HIGH);
+
+    // E-ink is write-only for this driver, but ESP32 SPI.begin expects a
+    // valid MISO pin to avoid gpio warnings. Reuse BUSY as an input pin here.
+    SPI.begin(PIN_EINK_CLK, PIN_EINK_BUSY, PIN_EINK_DIN, PIN_EINK_CS);
+    SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
+
+    // Hardware reset
+    digitalWrite(PIN_EINK_RST, HIGH);
+    delay(20);
+    digitalWrite(PIN_EINK_RST, LOW);
+    delay(10);
+    digitalWrite(PIN_EINK_RST, HIGH);
+    delay(20);
+
+    // Software reset
+    sendCommand(0x12);
+    waitBusy("sw-reset");
+
+    // Driver output control (200 lines)
+    sendCommand(0x01);
+    sendData((HEIGHT - 1) & 0xFF);
+    sendData(((HEIGHT - 1) >> 8) & 0xFF);
+    sendData(0x00);
+
+    // Data entry mode: X+, Y+
+    sendCommand(0x11);
+    sendData(0x01);
+
+    setRamWindow();
+    setRamPointer();
+
+    // Border waveform
+    sendCommand(0x3C);
+    sendData(0x05);
+
+    ready_ = true;
+    Serial.println("[EINK] init done");
+#endif
+}
+
+void HalEink::clear(bool white) {
+#if !SOLWEAR_EINK_TARGET
+    return;
+#else
+    if (!ready_) return;
+
+    beginFrame(white);
+    present();
+    Serial.printf("[EINK] clear %s\n", white ? "white" : "black");
+#endif
+}
+
+void HalEink::drawTestPattern() {
+#if !SOLWEAR_EINK_TARGET
+    return;
+#else
+    if (!ready_) return;
+
+    beginFrame(true);
+    for (uint16_t y = 0; y < HEIGHT; ++y) {
+        for (uint16_t xb = 0; xb < WIDTH / 8; ++xb) {
+            for (uint8_t bit = 0; bit < 8; ++bit) {
+                const uint16_t x = xb * 8 + bit;
+                const bool white = ((x / 16) + (y / 16)) % 2 == 0;
+                drawPixel((int16_t)x, (int16_t)y, !white);
+            }
+        }
+    }
+
+    present();
+    Serial.println("[EINK] checkerboard test pushed");
+#endif
+}

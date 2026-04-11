@@ -7,9 +7,13 @@ void HalThermal::init() {
 }
 
 void HalThermal::update() {
-    // analogReadTemp() is provided by the earlephilhower RP2040 Arduino core
-    // and reads ADC4 (the chip's internal temperature sensor) returning C.
+    // RP2040 has a direct internal temperature API; other targets keep a
+    // conservative placeholder until a board-specific sensor path is added.
+#if defined(ARDUINO_ARCH_RP2040)
     float t = analogReadTemp();
+#else
+    float t = tempC_;
+#endif
     if (t < -20.0f || t > 120.0f) {
         // Out-of-range reading — ignore.
         return;

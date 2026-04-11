@@ -12,6 +12,16 @@ static constexpr float AVG_DRAW_MA = 80.0f;
 // but the user mentioned a 1200 mAh pack. Pick a conservative middle.
 static constexpr float BATTERY_CAPACITY_MAH = 1200.0f;
 
+static uint32_t getFreeHeapBytes() {
+#if defined(ARDUINO_ARCH_RP2040)
+    return (uint32_t)rp2040.getFreeHeap();
+#elif defined(ARDUINO_ARCH_ESP32)
+    return (uint32_t)ESP.getFreeHeap();
+#else
+    return 0;
+#endif
+}
+
 void StatsApp::onCreate() {
     statusBar.setTitle("Stats");
     page_ = 0;
@@ -122,7 +132,7 @@ void StatsApp::renderSystemPage(TFT_eSprite& canvas) {
     char buf[40];
 
     // Free heap
-    uint32_t heap = rp2040.getFreeHeap();
+    uint32_t heap = getFreeHeapBytes();
     snprintf(buf, sizeof(buf), "Heap: %lu B", (unsigned long)heap);
     canvas.setTextColor(Theme::TEXT_PRIMARY);
     canvas.drawString(buf, Theme::PADDING, y, 2);

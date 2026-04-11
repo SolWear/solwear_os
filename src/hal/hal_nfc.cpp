@@ -20,9 +20,13 @@ bool HalNfc::ensureInit() {
     Serial.println("[HAL] NFC: powering up PN532...");
 
     if (!wireStarted_) {
+#if defined(ARDUINO_ARCH_RP2040)
         Wire.setSDA(PIN_NFC_SDA);
         Wire.setSCL(PIN_NFC_SCL);
         Wire.begin();
+#else
+        Wire.begin(PIN_NFC_SDA, PIN_NFC_SCL);
+#endif
         Wire.setClock(100000);  // PN532 prefers 100kHz
         wireStarted_ = true;
     }

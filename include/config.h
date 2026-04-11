@@ -22,6 +22,30 @@
 #define SOLWEAR_PROTO_CAPS "status,watch-control,apps,diagnostics,uf2"
 #endif
 
+#ifndef SOLWEAR_EINK_TARGET
+#define SOLWEAR_EINK_TARGET 0
+#endif
+
+#ifndef SOLWEAR_HAS_TOUCH
+#define SOLWEAR_HAS_TOUCH 1
+#endif
+
+#ifndef SOLWEAR_HAS_IMU
+#define SOLWEAR_HAS_IMU 1
+#endif
+
+#ifndef SOLWEAR_HAS_NFC
+#define SOLWEAR_HAS_NFC 1
+#endif
+
+#ifndef SOLWEAR_HAS_BATTERY
+#define SOLWEAR_HAS_BATTERY 1
+#endif
+
+#ifndef SOLWEAR_HAS_BUZZER
+#define SOLWEAR_HAS_BUZZER 1
+#endif
+
 // --- Display (ST7789V2 via SPI1) ---
 #define PIN_LCD_DC      8
 #define PIN_LCD_CS      9
