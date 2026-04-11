@@ -7,18 +7,25 @@ const char* SystemClock::monthNames_[12] = {"Jan", "Feb", "Mar", "Apr", "May", "
 
 void SystemClock::init() {
     lastMillis_ = millis();
+    carryMs_ = 0;
 }
 
 void SystemClock::update() {
     uint32_t now = millis();
     uint32_t elapsed = now - lastMillis_;
     lastMillis_ = now;
-    unixEpoch_ += elapsed / 1000;
+    carryMs_ += elapsed;
+    if (carryMs_ >= 1000UL) {
+        uint32_t deltaSec = carryMs_ / 1000UL;
+        unixEpoch_ += deltaSec;
+        carryMs_ -= (deltaSec * 1000UL);
+    }
 }
 
 void SystemClock::setUnixEpoch(uint32_t epoch) {
     unixEpoch_ = epoch;
     lastMillis_ = millis();
+    carryMs_ = 0;
 }
 
 void SystemClock::setTime(uint16_t year, uint8_t month, uint8_t day,
@@ -38,6 +45,7 @@ void SystemClock::setTime(uint16_t year, uint8_t month, uint8_t day,
 
     unixEpoch_ = days * 86400UL + hour * 3600UL + minute * 60UL + second;
     lastMillis_ = millis();
+    carryMs_ = 0;
 }
 
 DateTime SystemClock::now() const {

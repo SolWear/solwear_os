@@ -36,8 +36,8 @@ public:
 private:
     SystemClock() {}
 
-    uint32_t epochOffset_ = 0;        // offset from millis to wall clock
     uint32_t lastMillis_ = 0;
+    uint32_t carryMs_ = 0;
     uint32_t unixEpoch_ = 1743868800; // April 5, 2026 00:00:00 UTC (default)
 
     static const char* dayNames_[7];

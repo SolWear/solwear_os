@@ -9,7 +9,8 @@
 void WatchFaceApp::onCreate() {
     Settings settings;
     if (Storage::instance().loadSettings(settings)) {
-        style_ = (WatchFaceStyle)settings.watchFaceIndex;
+        style_ = (WatchFaceStyle)(settings.watchFaceIndex % (uint8_t)WatchFaceStyle::STYLE_COUNT);
+        use24Hour_ = settings.timeFormat24h;
         wallpaperIdx_ = settings.wallpaperIndex;
     }
 }
@@ -32,7 +33,29 @@ void WatchFaceApp::onEvent(const Event& event) {
 }
 
 void WatchFaceApp::update(uint32_t dt) {
-    // Nothing complex needed — render handles time display
+    settingsPollMs_ += dt;
+    if (settingsPollMs_ >= 3000U) {
+        settingsPollMs_ = 0;
+        Settings settings;
+        if (Storage::instance().loadSettings(settings)) {
+            use24Hour_ = settings.timeFormat24h;
+        }
+    }
+}
+
+void WatchFaceApp::formatClock(char* buf, size_t len, bool withSeconds) const {
+    DateTime dt = SystemClock::instance().now();
+    uint8_t hour = dt.hour;
+    if (!use24Hour_) {
+        hour = (uint8_t)(hour % 12);
+        if (hour == 0) hour = 12;
+    }
+
+    if (withSeconds) {
+        snprintf(buf, len, "%02u:%02u:%02u", hour, dt.minute, dt.second);
+    } else {
+        snprintf(buf, len, "%02u:%02u", hour, dt.minute);
+    }
 }
 
 void WatchFaceApp::render(TFT_eSprite& canvas) {
@@ -43,6 +66,7 @@ void WatchFaceApp::render(TFT_eSprite& canvas) {
         case WatchFaceStyle::DIGITAL:  renderDigital(canvas);  break;
         case WatchFaceStyle::ANALOG_FACE: renderAnalog(canvas); break;
         case WatchFaceStyle::MINIMAL:  renderMinimal(canvas);  break;
+        case WatchFaceStyle::SOLANA:   renderSolana(canvas);   break;
     }
 
     // Battery indicator (top right)
@@ -50,22 +74,25 @@ void WatchFaceApp::render(TFT_eSprite& canvas) {
 }
 
 void WatchFaceApp::renderDigital(TFT_eSprite& canvas) {
-    SystemClock& clk = SystemClock::instance();
     char buf[16];
 
     // Large time
-    clk.formatTime(buf, sizeof(buf));
+    formatClock(buf, sizeof(buf), false);
     canvas.setTextColor(Theme::TEXT_PRIMARY);
     Draw::drawCenteredText(canvas, buf, 90, 7, Theme::TEXT_PRIMARY);
 
     // Seconds
-    DateTime dt = clk.now();
+    DateTime dt = SystemClock::instance().now();
     snprintf(buf, sizeof(buf), "%02d", dt.second);
     Draw::drawCenteredText(canvas, buf, 145, 4, Theme::ACCENT);
 
     // Date
-    clk.formatDate(buf, sizeof(buf));
+    SystemClock::instance().formatDate(buf, sizeof(buf));
     Draw::drawCenteredText(canvas, buf, 175, 2, Theme::TEXT_SECONDARY);
+
+    if (!use24Hour_) {
+        Draw::drawCenteredText(canvas, dt.hour >= 12 ? "PM" : "AM", 205, 2, Theme::TEXT_MUTED);
+    }
 
     // Step count
     uint32_t steps = imu.getSteps();
@@ -122,13 +149,16 @@ void WatchFaceApp::renderAnalog(TFT_eSprite& canvas) {
 }
 
 void WatchFaceApp::renderMinimal(TFT_eSprite& canvas) {
-    SystemClock& clk = SystemClock::instance();
-    DateTime dt = clk.now();
+    DateTime dt = SystemClock::instance().now();
 
     // Time only, large centered
     char buf[6];
-    clk.formatTime(buf, sizeof(buf));
+    formatClock(buf, sizeof(buf), false);
     Draw::drawCenteredText(canvas, buf, 115, 7, Theme::TEXT_PRIMARY);
+
+    if (!use24Hour_) {
+        Draw::drawCenteredText(canvas, dt.hour >= 12 ? "PM" : "AM", 160, 2, Theme::TEXT_MUTED);
+    }
 
     // Activity ring around screen edge
     uint32_t steps = imu.getSteps();
@@ -150,4 +180,33 @@ void WatchFaceApp::renderMinimal(TFT_eSprite& canvas) {
         canvas.drawPixel(x + 1, y, Theme::ACCENT_GREEN);
         canvas.drawPixel(x, y + 1, Theme::ACCENT_GREEN);
     }
+}
+
+void WatchFaceApp::renderSolana(TFT_eSprite& canvas) {
+    DateTime dt = SystemClock::instance().now();
+    char buf[24];
+
+    auto drawSolanaBar = [&canvas](int16_t x, int16_t y, int16_t w, int16_t h, int16_t slant, uint16_t color) {
+        canvas.fillRect(x + slant, y, w - slant * 2, h, color);
+        canvas.fillTriangle(x, y + h - 1, x + slant, y, x + slant, y + h - 1, color);
+        canvas.fillTriangle(x + w - slant, y, x + w, y, x + w - slant, y + h - 1, color);
+    };
+
+    formatClock(buf, sizeof(buf), false);
+    Draw::drawCenteredText(canvas, buf, 40, 7, Theme::TEXT_PRIMARY);
+
+    drawSolanaBar(48, 96, 144, 20, 16, Theme::ACCENT_SOL);
+    drawSolanaBar(48, 132, 144, 20, 16, Theme::ACCENT);
+    drawSolanaBar(48, 168, 144, 20, 16, Theme::ACCENT_GREEN);
+
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", dt.year, dt.month, dt.day);
+    Draw::drawCenteredText(canvas, buf, 216, 2, Theme::TEXT_SECONDARY);
+
+    if (!use24Hour_) {
+        Draw::drawCenteredText(canvas, dt.hour >= 12 ? "PM" : "AM", 194, 2, Theme::TEXT_MUTED);
+    }
+
+    uint32_t steps = imu.getSteps();
+    snprintf(buf, sizeof(buf), "%lu steps", (unsigned long)steps);
+    Draw::drawCenteredText(canvas, buf, 238, 2, Theme::ACCENT);
 }

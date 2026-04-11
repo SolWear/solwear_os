@@ -1,4 +1,5 @@
 #include "app_settings.h"
+#include "app_watchface.h"
 #include "../core/screen_manager.h"
 #include "../ui/ui_common.h"
 #include "../ui/status_bar.h"
@@ -11,6 +12,7 @@ static const char* itemNames[] = {
     "Sound",
     "Vibration",
     "Watch Face",
+    "Time Format",
     "Wallpaper",
     "Step Goal",
     "About"
@@ -59,16 +61,19 @@ void SettingsApp::onEvent(const Event& event) {
                 settings_.vibrationEnabled = !settings_.vibrationEnabled;
                 break;
             case 3: // Watch Face
-                settings_.watchFaceIndex = (settings_.watchFaceIndex + 1) % 3;
+                settings_.watchFaceIndex = (settings_.watchFaceIndex + 1) % (uint8_t)WatchFaceStyle::STYLE_COUNT;
                 break;
-            case 4: // Wallpaper
+            case 4: // Time Format
+                settings_.timeFormat24h = !settings_.timeFormat24h;
+                break;
+            case 5: // Wallpaper
                 settings_.wallpaperIndex = (settings_.wallpaperIndex + 1) % Wallpapers::COUNT;
                 break;
-            case 5: // Step Goal
+            case 6: // Step Goal
                 settings_.stepGoal += 1000;
                 if (settings_.stepGoal > 30000) settings_.stepGoal = 5000;
                 break;
-            case 6: // About — no action
+            case 7: // About — no action
                 break;
         }
     }
@@ -120,17 +125,20 @@ void SettingsApp::renderItem(TFT_eSprite& canvas, uint8_t idx, int16_t y) {
             valColor = settings_.vibrationEnabled ? Theme::SUCCESS : Theme::TEXT_MUTED;
             break;
         case 3: {
-            const char* faces[] = {"Digital", "Analog", "Minimal"};
-            snprintf(valBuf, sizeof(valBuf), "%s", faces[settings_.watchFaceIndex % 3]);
+            const char* faces[] = {"Digital", "Analog", "Minimal", "Solana"};
+            snprintf(valBuf, sizeof(valBuf), "%s", faces[settings_.watchFaceIndex % (uint8_t)WatchFaceStyle::STYLE_COUNT]);
             break;
         }
         case 4:
-            snprintf(valBuf, sizeof(valBuf), "%s", Wallpapers::getName(settings_.wallpaperIndex));
+            snprintf(valBuf, sizeof(valBuf), settings_.timeFormat24h ? "24H" : "12H");
             break;
         case 5:
-            snprintf(valBuf, sizeof(valBuf), "%u", settings_.stepGoal);
+            snprintf(valBuf, sizeof(valBuf), "%s", Wallpapers::getName(settings_.wallpaperIndex));
             break;
         case 6:
+            snprintf(valBuf, sizeof(valBuf), "%u", settings_.stepGoal);
+            break;
+        case 7:
             snprintf(valBuf, sizeof(valBuf), "v1.0");
             valColor = Theme::TEXT_SECONDARY;
             break;

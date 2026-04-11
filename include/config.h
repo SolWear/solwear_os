@@ -26,6 +26,10 @@
 #define SOLWEAR_EINK_TARGET 0
 #endif
 
+#ifndef SOLWEAR_EINK_ROTATE_180
+#define SOLWEAR_EINK_ROTATE_180 0
+#endif
+
 #ifndef SOLWEAR_HAS_TOUCH
 #define SOLWEAR_HAS_TOUCH 1
 #endif

@@ -12,7 +12,7 @@ public:
     AppId getAppId() const override { return APP_SETTINGS; }
 
 private:
-    static constexpr uint8_t ITEM_COUNT = 7;
+    static constexpr uint8_t ITEM_COUNT = 8;
     static constexpr uint8_t ITEM_HEIGHT = 36;
 
     void renderItem(TFT_eSprite& canvas, uint8_t idx, int16_t y);

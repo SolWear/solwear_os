@@ -34,6 +34,7 @@ bool Storage::loadSettings(Settings& s) {
     if ((p = strstr(buf, "\"sound\":")))      { int v; sscanf(p + 8, "%d", &v); s.soundEnabled = v; }
     if ((p = strstr(buf, "\"vibration\":")))   { int v; sscanf(p + 12, "%d", &v); s.vibrationEnabled = v; }
     if ((p = strstr(buf, "\"watchFace\":")))   sscanf(p + 12, "%hhu", &s.watchFaceIndex);
+    if ((p = strstr(buf, "\"timeFormat24h\":"))) { int v; sscanf(p + 16, "%d", &v); s.timeFormat24h = v; }
     if ((p = strstr(buf, "\"wallpaper\":")))   sscanf(p + 12, "%hhu", &s.wallpaperIndex);
     if ((p = strstr(buf, "\"stepGoal\":")))    sscanf(p + 11, "%hu", &s.stepGoal);
     if ((p = strstr(buf, "\"batteryDivider\":"))) sscanf(p + 17, "%f", &s.batteryDivider);
@@ -54,12 +55,13 @@ bool Storage::saveSettings(const Settings& s) {
         "  \"sound\": %d,\n"
         "  \"vibration\": %d,\n"
         "  \"watchFace\": %u,\n"
+        "  \"timeFormat24h\": %d,\n"
         "  \"wallpaper\": %u,\n"
         "  \"stepGoal\": %u,\n"
         "  \"batteryDivider\": %.4f\n"
         "}\n",
         s.brightness, s.soundEnabled ? 1 : 0, s.vibrationEnabled ? 1 : 0,
-        s.watchFaceIndex, s.wallpaperIndex, s.stepGoal, s.batteryDivider);
+        s.watchFaceIndex, s.timeFormat24h ? 1 : 0, s.wallpaperIndex, s.stepGoal, s.batteryDivider);
 
     f.print(buf);
     f.close();

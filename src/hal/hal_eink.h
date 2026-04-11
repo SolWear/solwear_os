@@ -13,7 +13,7 @@ public:
     uint16_t height() const { return HEIGHT; }
 
     void beginFrame(bool white = true);
-    void present(bool antiGhost = true);
+    void present(bool antiGhost = true, bool fastRefresh = false);
     void scrub();
     void drawPixel(int16_t x, int16_t y, bool black = true);
     void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, bool black = true);
@@ -30,7 +30,7 @@ private:
     void waitBusy(const char* stage);
     void setRamWindow();
     void setRamPointer();
-    void refresh();
+    void refresh(bool fastRefresh = false);
     void writeRam(uint8_t cmd, const uint8_t* data);
     void writeSolidRam(uint8_t cmd, uint8_t value);
 

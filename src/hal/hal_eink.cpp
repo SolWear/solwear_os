@@ -52,9 +52,9 @@ void HalEink::setRamPointer() {
     waitBusy("set-ram-pointer");
 }
 
-void HalEink::refresh() {
+void HalEink::refresh(bool fastRefresh) {
     sendCommand(0x22);
-    sendData(0xC7);
+    sendData(fastRefresh ? 0xCF : 0xC7);
     sendCommand(0x20);
     waitBusy("refresh");
 }
@@ -78,6 +78,10 @@ void HalEink::beginFrame(bool white) {
 }
 
 void HalEink::drawPixel(int16_t x, int16_t y, bool black) {
+#if SOLWEAR_EINK_ROTATE_180
+    x = (int16_t)(WIDTH - 1 - x);
+    y = (int16_t)(HEIGHT - 1 - y);
+#endif
     if (x < 0 || y < 0 || x >= (int16_t)WIDTH || y >= (int16_t)HEIGHT) {
         return;
     }
@@ -163,7 +167,7 @@ void HalEink::drawCircle(int16_t x0, int16_t y0, int16_t r, bool black) {
     }
 }
 
-void HalEink::present(bool antiGhost) {
+void HalEink::present(bool antiGhost, bool fastRefresh) {
     if (!ready_) return;
 
     if (antiGhost && presentCount_ > 0 && (presentCount_ % 6 == 0)) {
@@ -178,7 +182,7 @@ void HalEink::present(bool antiGhost) {
     writeRam(0x24, frameBuf_);
     writeRam(0x26, frameBuf_);
 
-    refresh();
+    refresh(fastRefresh && !antiGhost);
     presentCount_++;
 }
 

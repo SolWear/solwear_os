@@ -71,6 +71,7 @@ static uint8_t g_bootStage = 0;
 static AppId g_einkCurrentApp = APP_HOME;
 static uint8_t g_einkWatchfaceStyle = 0;
 static uint8_t g_lastEinkRenderedMinute = 255;
+static uint8_t g_lastEinkRenderedHour = 255;
 #endif
 
 static uint32_t getFreeHeapBytes() {
@@ -162,10 +163,19 @@ static void einkDrawColon(int16_t x, int16_t y, int16_t s) {
     eink.fillRect(x, y + s + r, r, r, true);
 }
 
-static void einkDrawTime(int16_t x, int16_t y, int16_t s, const DateTime& dt) {
+static uint8_t einkDisplayHour(const DateTime& dt, bool use24Hour) {
+    if (use24Hour) {
+        return dt.hour;
+    }
+    uint8_t h = (uint8_t)(dt.hour % 12);
+    return h == 0 ? 12 : h;
+}
+
+static void einkDrawTime(int16_t x, int16_t y, int16_t s, const DateTime& dt, bool use24Hour) {
+    const uint8_t hour = einkDisplayHour(dt, use24Hour);
     const int16_t step = s + 6;
-    einkDrawSegDigit(x, y, s, dt.hour / 10);
-    einkDrawSegDigit(x + step, y, s, dt.hour % 10);
+    einkDrawSegDigit(x, y, s, hour / 10);
+    einkDrawSegDigit(x + step, y, s, hour % 10);
     einkDrawColon(x + step * 2 - 2, y, s);
     einkDrawSegDigit(x + step * 2 + 4, y, s, dt.minute / 10);
     einkDrawSegDigit(x + step * 3 + 4, y, s, dt.minute % 10);
@@ -272,13 +282,20 @@ static void einkDrawTopClockBar(const DateTime& dt) {
     eink.fillRect(176, 8, 12, 2, true);
     eink.fillRect(176, 12, 12, 2, true);
     eink.fillRect(176, 16, 12, 2, true);
-    einkDrawTime(58, 6, 12, dt);
+    einkDrawTime(58, 6, 12, dt, g_settings.timeFormat24h);
+    if (!g_settings.timeFormat24h) {
+        if (dt.hour >= 12) {
+            eink.fillRect(164, 7, 8, 8, true);
+        } else {
+            eink.drawRect(164, 7, 8, 8, true);
+        }
+    }
 }
 
 static void einkDrawWatchfaceDigital(const DateTime& dt) {
     einkDrawTopClockBar(dt);
     eink.drawRect(12, 36, 176, 152, true);
-    einkDrawTime(34, 80, 22, dt);
+    einkDrawTime(34, 80, 22, dt, g_settings.timeFormat24h);
 }
 
 static void einkDrawWatchfaceAnalog(const DateTime& dt) {
@@ -311,11 +328,30 @@ static void einkDrawWatchfaceAnalog(const DateTime& dt) {
 static void einkDrawWatchfaceMinimal(const DateTime& dt) {
     einkDrawTopClockBar(dt);
     eink.drawRect(12, 36, 176, 152, true);
-    einkDrawTime(42, 95, 18, dt);
+    einkDrawTime(42, 95, 18, dt, g_settings.timeFormat24h);
 
     const int16_t secBar = (dt.second * 164) / 59;
     eink.drawRect(18, 172, 164, 10, true);
     eink.fillRect(20, 174, secBar, 6, true);
+}
+
+static void einkDrawSolanaBar(int16_t x, int16_t y, int16_t w, int16_t h, int16_t skew) {
+    for (int16_t row = 0; row < h; ++row) {
+        int16_t dx = (row * skew) / h;
+        eink.fillRect(x + dx, y + row, w, 1, true);
+    }
+}
+
+static void einkDrawWatchfaceSolana(const DateTime& dt) {
+    einkDrawTopClockBar(dt);
+    eink.drawRect(12, 36, 176, 152, true);
+
+    // Stylized Solana mark in monochrome e-ink.
+    einkDrawSolanaBar(48, 68, 92, 14, 10);
+    einkDrawSolanaBar(62, 100, 92, 14, -10);
+    einkDrawSolanaBar(48, 132, 92, 14, 10);
+
+    einkDrawTime(34, 154, 14, dt, g_settings.timeFormat24h);
 }
 
 static void einkDrawAppFrame(AppId id, const DateTime& dt) {
@@ -325,7 +361,7 @@ static void einkDrawAppFrame(AppId id, const DateTime& dt) {
     switch (id) {
         case APP_WALLET:
             eink.drawRect(22, 52, 156, 56, true);
-            einkDrawTime(38, 66, 16, dt);
+            einkDrawTime(38, 66, 16, dt, g_settings.timeFormat24h);
             eink.drawRect(22, 120, 156, 50, true);
             eink.fillRect(30, 130, 64, 6, true);
             eink.fillRect(30, 142, 112, 4, true);
@@ -357,7 +393,7 @@ static void einkDrawAppFrame(AppId id, const DateTime& dt) {
     }
 }
 
-static void renderEinkUi(AppId id, bool antiGhost = true) {
+static void renderEinkUi(AppId id, bool antiGhost = true, bool fastRefresh = false) {
     if (!eink.isReady()) {
         return;
     }
@@ -365,6 +401,7 @@ static void renderEinkUi(AppId id, bool antiGhost = true) {
     g_einkCurrentApp = id;
     DateTime dt = SystemClock::instance().now();
     g_lastEinkRenderedMinute = dt.minute;
+    g_lastEinkRenderedHour = dt.hour;
 
     eink.beginFrame(true);
     eink.drawRect(0, 0, 200, 200, true);
@@ -373,16 +410,17 @@ static void renderEinkUi(AppId id, bool antiGhost = true) {
         einkDrawTopClockBar(dt);
         einkDrawMainGrid();
     } else if (id == APP_WATCHFACE) {
-        switch (g_einkWatchfaceStyle % 3) {
+        switch (g_einkWatchfaceStyle % (uint8_t)WatchFaceStyle::STYLE_COUNT) {
             case 0: einkDrawWatchfaceDigital(dt); break;
             case 1: einkDrawWatchfaceAnalog(dt); break;
-            default: einkDrawWatchfaceMinimal(dt); break;
+            case 2: einkDrawWatchfaceMinimal(dt); break;
+            default: einkDrawWatchfaceSolana(dt); break;
         }
     } else {
         einkDrawAppFrame(id, dt);
     }
 
-    eink.present(antiGhost);
+    eink.present(antiGhost, fastRefresh);
 }
 #endif
 
@@ -516,9 +554,11 @@ static void emitStatusHeartbeat() {
 //   diag on|off      — lock display awake/full-brightness for hardware tests
 //   app <name>       — open watch app (watchface|home|settings|wallet|...)
 //   nav home|back    — watch navigation helpers
-//   set watchface N  — set watchface style (0..2) and persist
+//   set watchface N  — set watchface style (0..3) and persist
+//   clock format 12|24 — set clock format
 //   set wallpaper N  — set wallpaper index and persist
 //   set stepgoal N   — set step goal and persist
+//   time now         — print clock time/date
 //   help             — list commands
 static void handleSerialCommand(const char* line) {
     if (strncmp(line, "calbat ", 7) == 0) {
@@ -665,6 +705,10 @@ static void handleSerialCommand(const char* line) {
         int x = -1;
         int y = -1;
         if (sscanf(line + 4, "%d %d", &x, &y) == 2) {
+#if SOLWEAR_EINK_ROTATE_180
+            x = 199 - x;
+            y = 199 - y;
+#endif
             bool handled = false;
             if (x >= 0 && x < 200 && y >= 0 && y < 200) {
                 if (y <= 28) {
@@ -730,11 +774,11 @@ static void handleSerialCommand(const char* line) {
 #endif
             Serial.printf("[CMD] watchface = %d (saved)\n", idx);
         } else {
-            Serial.println("[CMD] invalid watchface index (0..2)");
+            Serial.println("[CMD] invalid watchface index (0..3)");
         }
     } else if (strcmp(line, "watchface next") == 0) {
 #if SOLWEAR_EINK_TARGET
-        g_einkWatchfaceStyle = (uint8_t)((g_einkWatchfaceStyle + 1) % 3);
+        g_einkWatchfaceStyle = (uint8_t)((g_einkWatchfaceStyle + 1) % (uint8_t)WatchFaceStyle::STYLE_COUNT);
         g_settings.watchFaceIndex = g_einkWatchfaceStyle;
         Storage::instance().saveSettings(g_settings);
         renderEinkUi(APP_WATCHFACE, false);
@@ -753,6 +797,22 @@ static void handleSerialCommand(const char* line) {
         } else {
             Serial.println("[CMD] invalid epoch");
         }
+    } else if (strcmp(line, "clock format 12") == 0 || strcmp(line, "time format 12") == 0) {
+        g_settings.timeFormat24h = false;
+        Storage::instance().saveSettings(g_settings);
+#if SOLWEAR_EINK_TARGET
+        renderEinkUi(g_einkCurrentApp, false);
+#endif
+        Serial.println("[CMD] clock format = 12h");
+    } else if (strcmp(line, "clock format 24") == 0 || strcmp(line, "time format 24") == 0) {
+        g_settings.timeFormat24h = true;
+        Storage::instance().saveSettings(g_settings);
+#if SOLWEAR_EINK_TARGET
+        renderEinkUi(g_einkCurrentApp, false);
+#endif
+        Serial.println("[CMD] clock format = 24h");
+    } else if (strcmp(line, "clock format") == 0 || strcmp(line, "time format") == 0) {
+        Serial.printf("[CMD] clock format = %s\n", g_settings.timeFormat24h ? "24h" : "12h");
     } else if (strncmp(line, "set wallpaper ", 14) == 0) {
         int idx = atoi(line + 14);
         if (idx >= 0 && idx <= 255) {
@@ -774,6 +834,23 @@ static void handleSerialCommand(const char* line) {
         } else {
             Serial.println("[CMD] invalid stepGoal (1000..50000)");
         }
+    } else if (strcmp(line, "time now") == 0 || strcmp(line, "clock now") == 0) {
+        DateTime dt = SystemClock::instance().now();
+        uint8_t hour = dt.hour;
+        if (!g_settings.timeFormat24h) {
+            hour = (uint8_t)(hour % 12);
+            if (hour == 0) {
+                hour = 12;
+            }
+        }
+        Serial.printf("[CMD] time %04u-%02u-%02u %02u:%02u:%02u %s\n",
+                      dt.year,
+                      dt.month,
+                      dt.day,
+                      hour,
+                      dt.minute,
+                      dt.second,
+                      g_settings.timeFormat24h ? "24h" : (dt.hour >= 12 ? "PM" : "AM"));
     } else if (strcmp(line, "version") == 0) {
         Serial.printf("[CMD] SolWearOS v1.0 proto=%s mcu=%s display=%s caps=%s\n",
                       SOLWEAR_PROTO_ID,
@@ -795,7 +872,7 @@ static void handleSerialCommand(const char* line) {
         ESP.restart();
 #endif
     } else if (strcmp(line, "help") == 0) {
-        Serial.println("[CMD] commands: calbat <volts>, bri <0-100>, status now, buzz test|buzz alarm|buzz on|buzz off|buzz sweep, display probe|display sweep, eink test|eink clear|eink scrub, diag on|diag off, app <name>, tap <x> <y>, nav home|back, set watchface <0-2>|watchface next, clock sync <epoch>, set wallpaper <n>, set stepgoal <1000-50000>, version, power off|poweroff, reboot bootsel, help");
+        Serial.println("[CMD] commands: calbat <volts>, bri <0-100>, status now, buzz test|buzz alarm|buzz on|buzz off|buzz sweep, display probe|display sweep, eink test|eink clear|eink scrub, diag on|diag off, app <name>, tap <x> <y>, nav home|back, set watchface <0-3>|watchface next, clock sync <epoch>|clock format 12|24|time now, set wallpaper <n>, set stepgoal <1000-50000>, version, power off|poweroff, reboot bootsel, help");
     } else if (line[0] != '\0') {
         Serial.printf("[CMD] unknown: '%s'\n", line);
     }
@@ -1010,7 +1087,7 @@ void setup() {
         Serial.println("[CORE] Settings loaded");
 #endif
 #if SOLWEAR_EINK_TARGET
-    g_einkWatchfaceStyle = (uint8_t)(g_settings.watchFaceIndex % 3);
+    g_einkWatchfaceStyle = (uint8_t)(g_settings.watchFaceIndex % (uint8_t)WatchFaceStyle::STYLE_COUNT);
 #endif
     }
 
@@ -1095,7 +1172,10 @@ void loop() {
     DateTime nowDt = SystemClock::instance().now();
     if ((g_einkCurrentApp == APP_HOME || g_einkCurrentApp == APP_WATCHFACE) &&
         nowDt.minute != g_lastEinkRenderedMinute) {
-        renderEinkUi(g_einkCurrentApp, false);
+        const bool hourBoundary = nowDt.hour != g_lastEinkRenderedHour;
+        const bool periodicAntiGhost = (nowDt.minute % 10) == 0;
+        const bool antiGhost = hourBoundary || periodicAntiGhost;
+        renderEinkUi(g_einkCurrentApp, antiGhost, !antiGhost);
     }
 #endif
 
