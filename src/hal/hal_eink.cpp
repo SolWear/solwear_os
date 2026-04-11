@@ -54,9 +54,23 @@ void HalEink::setRamPointer() {
 
 void HalEink::refresh() {
     sendCommand(0x22);
-    sendData(0xF7);
+    sendData(0xC7);
     sendCommand(0x20);
     waitBusy("refresh");
+}
+
+void HalEink::writeRam(uint8_t cmd, const uint8_t* data) {
+    sendCommand(cmd);
+    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
+        sendData(data[i]);
+    }
+}
+
+void HalEink::writeSolidRam(uint8_t cmd, uint8_t value) {
+    sendCommand(cmd);
+    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
+        sendData(value);
+    }
 }
 
 void HalEink::beginFrame(bool white) {
@@ -152,17 +166,17 @@ void HalEink::drawCircle(int16_t x0, int16_t y0, int16_t r, bool black) {
 void HalEink::present(bool antiGhost) {
     if (!ready_) return;
 
-    if (antiGhost && (presentCount_ % 4 == 0)) {
+    if (antiGhost && presentCount_ > 0 && (presentCount_ % 6 == 0)) {
         scrub();
     }
 
     setRamWindow();
     setRamPointer();
 
-    sendCommand(0x24);
-    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
-        sendData(frameBuf_[i]);
-    }
+    // Keep both internal controller memories in sync to avoid random block
+    // artifacts on subsequent refreshes.
+    writeRam(0x24, frameBuf_);
+    writeRam(0x26, frameBuf_);
 
     refresh();
     presentCount_++;
@@ -172,23 +186,19 @@ void HalEink::scrub() {
     if (!ready_) return;
 
     // Black -> White cleanup reduces ghosting on partial-content updates.
-    memset(frameBuf_, 0x00, sizeof(frameBuf_));
     setRamWindow();
     setRamPointer();
-    sendCommand(0x24);
-    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
-        sendData(frameBuf_[i]);
-    }
+    writeSolidRam(0x24, 0x00);
+    writeSolidRam(0x26, 0x00);
+    refresh();
+
+    setRamWindow();
+    setRamPointer();
+    writeSolidRam(0x24, 0xFF);
+    writeSolidRam(0x26, 0xFF);
     refresh();
 
     memset(frameBuf_, 0xFF, sizeof(frameBuf_));
-    setRamWindow();
-    setRamPointer();
-    sendCommand(0x24);
-    for (uint16_t i = 0; i < BUF_SIZE; ++i) {
-        sendData(frameBuf_[i]);
-    }
-    refresh();
 }
 
 void HalEink::init() {
@@ -207,7 +217,7 @@ void HalEink::init() {
     // E-ink is write-only for this driver, but ESP32 SPI.begin expects a
     // valid MISO pin to avoid gpio warnings. Reuse BUSY as an input pin here.
     SPI.begin(PIN_EINK_CLK, PIN_EINK_BUSY, PIN_EINK_DIN, PIN_EINK_CS);
-    SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
+    SPI.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));
 
     // Hardware reset
     digitalWrite(PIN_EINK_RST, HIGH);
@@ -221,11 +231,11 @@ void HalEink::init() {
     sendCommand(0x12);
     waitBusy("sw-reset");
 
-    // Driver output control (200 lines)
+    // Driver output control for 200 rows.
     sendCommand(0x01);
-    sendData((HEIGHT - 1) & 0xFF);
-    sendData(((HEIGHT - 1) >> 8) & 0xFF);
+    sendData(0xC7);
     sendData(0x00);
+    sendData(0x01);
 
     // Data entry mode: X+, Y+
     sendCommand(0x11);
@@ -234,12 +244,27 @@ void HalEink::init() {
     setRamWindow();
     setRamPointer();
 
-    // Border waveform
+    // Border waveform and built-in temperature load.
     sendCommand(0x3C);
-    sendData(0x05);
+    sendData(0x01);
+    sendCommand(0x18);
+    sendData(0x80);
+    sendCommand(0x22);
+    sendData(0xB1);
+    sendCommand(0x20);
+    waitBusy("temp-load");
+
+    // Force a white baseline on both controller memories so first UI render
+    // doesn't inherit undefined garbage from power-on state.
+    setRamWindow();
+    setRamPointer();
+    writeSolidRam(0x24, 0xFF);
+    writeSolidRam(0x26, 0xFF);
+    refresh();
+    presentCount_ = 0;
 
     ready_ = true;
-    Serial.println("[EINK] init done");
+    Serial.println("[EINK] init done (stable full-refresh mode)");
 #endif
 }
 
@@ -250,7 +275,12 @@ void HalEink::clear(bool white) {
     if (!ready_) return;
 
     beginFrame(white);
-    present();
+    setRamWindow();
+    setRamPointer();
+    writeRam(0x24, frameBuf_);
+    writeRam(0x26, frameBuf_);
+    refresh();
+    presentCount_ = 0;
     Serial.printf("[EINK] clear %s\n", white ? "white" : "black");
 #endif
 }

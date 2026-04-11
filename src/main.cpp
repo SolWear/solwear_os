@@ -133,6 +133,12 @@ static const uint8_t kSegMap[10] = {
     0b1011011, 0b1011111, 0b1110000, 0b1111111, 0b1111011
 };
 
+static constexpr int16_t kHomeCardW = 80;
+static constexpr int16_t kHomeCardH = 74;
+static constexpr int16_t kHomeGap = 8;
+static constexpr int16_t kHomeX0 = 16;
+static constexpr int16_t kHomeY0 = 34;
+
 static void einkDrawSegDigit(int16_t x, int16_t y, int16_t s, int digit) {
     if (digit < 0 || digit > 9) return;
     const uint8_t m = kSegMap[digit];
@@ -201,20 +207,57 @@ static void einkDrawIconGear(int16_t x, int16_t y, int16_t s) {
     eink.fillRect(ox + w, oy + w / 2 - 2, 4, 4, true);
 }
 
-static void einkDrawMainGrid() {
-    const int16_t cardW = 80;
-    const int16_t cardH = 74;
-    const int16_t gap = 8;
-    const int16_t x0 = 16;
-    const int16_t y0 = 34;
+static void einkDrawCardShell(int16_t x, int16_t y) {
+    eink.drawRect(x, y, kHomeCardW, kHomeCardH, true);
+    eink.fillRect(x + 4, y + 4, 10, 2, true);
+    eink.fillRect(x + kHomeCardW - 14, y + 4, 10, 2, true);
+    eink.fillRect(x + 4, y + kHomeCardH - 6, 10, 2, true);
+    eink.fillRect(x + kHomeCardW - 14, y + kHomeCardH - 6, 10, 2, true);
+}
 
-    for (int row = 0; row < 2; ++row) {
-        for (int col = 0; col < 2; ++col) {
-            const int16_t x = x0 + col * (cardW + gap);
-            const int16_t y = y0 + row * (cardH + gap);
-            eink.drawRect(x, y, cardW, cardH, true);
-        }
+static bool einkPointInRect(int16_t x, int16_t y, int16_t rx, int16_t ry, int16_t rw, int16_t rh) {
+    return x >= rx && x < (rx + rw) && y >= ry && y < (ry + rh);
+}
+
+static bool einkMapTapToHomeApp(int16_t x, int16_t y, AppId& outId) {
+    const int16_t x1 = kHomeX0 + kHomeCardW + kHomeGap;
+    const int16_t y1 = kHomeY0 + kHomeCardH + kHomeGap;
+
+    if (einkPointInRect(x, y, kHomeX0, kHomeY0, kHomeCardW, kHomeCardH)) {
+        outId = APP_WALLET;
+        return true;
     }
+    if (einkPointInRect(x, y, x1, kHomeY0, kHomeCardW, kHomeCardH)) {
+#if SOLWEAR_HAS_IMU
+        outId = APP_HEALTH;
+#else
+        outId = APP_STATS;
+#endif
+        return true;
+    }
+    if (einkPointInRect(x, y, kHomeX0, y1, kHomeCardW, kHomeCardH)) {
+#if SOLWEAR_HAS_NFC
+        outId = APP_NFC;
+#else
+        outId = APP_ALARM;
+#endif
+        return true;
+    }
+    if (einkPointInRect(x, y, x1, y1, kHomeCardW, kHomeCardH)) {
+        outId = APP_SETTINGS;
+        return true;
+    }
+    return false;
+}
+
+static void einkDrawMainGrid() {
+    const int16_t x1 = kHomeX0 + kHomeCardW + kHomeGap;
+    const int16_t y1 = kHomeY0 + kHomeCardH + kHomeGap;
+
+    einkDrawCardShell(kHomeX0, kHomeY0);
+    einkDrawCardShell(x1, kHomeY0);
+    einkDrawCardShell(kHomeX0, y1);
+    einkDrawCardShell(x1, y1);
 
     einkDrawIconWallet(30, 52, 38);
     einkDrawIconHeart(118, 52, 38);
@@ -224,6 +267,11 @@ static void einkDrawMainGrid() {
 
 static void einkDrawTopClockBar(const DateTime& dt) {
     eink.drawRect(2, 2, 196, 24, true);
+    eink.drawRect(8, 7, 14, 12, true);
+    eink.fillRect(22, 10, 2, 6, true);
+    eink.fillRect(176, 8, 12, 2, true);
+    eink.fillRect(176, 12, 12, 2, true);
+    eink.fillRect(176, 16, 12, 2, true);
     einkDrawTime(58, 6, 12, dt);
 }
 
@@ -275,7 +323,16 @@ static void einkDrawAppFrame(AppId id, const DateTime& dt) {
     eink.drawRect(12, 36, 176, 152, true);
 
     switch (id) {
-        case APP_WALLET:   einkDrawIconWallet(72, 86, 56); break;
+        case APP_WALLET:
+            eink.drawRect(22, 52, 156, 56, true);
+            einkDrawTime(38, 66, 16, dt);
+            eink.drawRect(22, 120, 156, 50, true);
+            eink.fillRect(30, 130, 64, 6, true);
+            eink.fillRect(30, 142, 112, 4, true);
+            eink.fillRect(30, 152, 78, 4, true);
+            eink.drawRect(150, 128, 18, 18, true);
+            eink.fillRect(156, 134, 6, 6, true);
+            break;
         case APP_HEALTH:   einkDrawIconHeart(72, 86, 56); break;
         case APP_SETTINGS: einkDrawIconGear(72, 86, 56); break;
         case APP_NFC:      einkDrawIconLock(72, 86, 56); break;
@@ -603,6 +660,44 @@ static void handleSerialCommand(const char* line) {
         } else {
             Serial.printf("[CMD] unknown app: %s\n", line + 4);
         }
+    } else if (strncmp(line, "tap ", 4) == 0) {
+#if SOLWEAR_EINK_TARGET
+        int x = -1;
+        int y = -1;
+        if (sscanf(line + 4, "%d %d", &x, &y) == 2) {
+            bool handled = false;
+            if (x >= 0 && x < 200 && y >= 0 && y < 200) {
+                if (y <= 28) {
+                    renderEinkUi(APP_WATCHFACE, false);
+                    handled = true;
+                } else if (y >= 168) {
+                    renderEinkUi(APP_HOME, false);
+                    handled = true;
+                } else if (g_einkCurrentApp == APP_HOME) {
+                    AppId target = APP_HOME;
+                    if (einkMapTapToHomeApp((int16_t)x, (int16_t)y, target)) {
+                        if (!openAppById(target)) {
+                            target = APP_SETTINGS;
+                            openAppById(target);
+                        }
+                        renderEinkUi(target, false);
+                        handled = true;
+                    }
+                } else {
+                    renderEinkUi(APP_HOME, false);
+                    handled = true;
+                }
+            }
+            if (!handled) {
+                renderEinkUi(g_einkCurrentApp, false);
+            }
+            Serial.printf("[CMD] tap x=%d y=%d\n", x, y);
+        } else {
+            Serial.println("[CMD] usage: tap <x> <y>");
+        }
+#else
+        Serial.println("[CMD] tap unsupported on this target");
+#endif
     } else if (strcmp(line, "nav home") == 0 || strcmp(line, "home") == 0) {
         ScreenManager::instance().goHome();
 #if SOLWEAR_EINK_TARGET
@@ -700,7 +795,7 @@ static void handleSerialCommand(const char* line) {
         ESP.restart();
 #endif
     } else if (strcmp(line, "help") == 0) {
-        Serial.println("[CMD] commands: calbat <volts>, bri <0-100>, status now, buzz test|buzz alarm|buzz on|buzz off|buzz sweep, display probe|display sweep, eink test|eink clear|eink scrub, diag on|diag off, app <name>, nav home|back, set watchface <0-2>|watchface next, clock sync <epoch>, set wallpaper <n>, set stepgoal <1000-50000>, version, power off|poweroff, reboot bootsel, help");
+        Serial.println("[CMD] commands: calbat <volts>, bri <0-100>, status now, buzz test|buzz alarm|buzz on|buzz off|buzz sweep, display probe|display sweep, eink test|eink clear|eink scrub, diag on|diag off, app <name>, tap <x> <y>, nav home|back, set watchface <0-2>|watchface next, clock sync <epoch>, set wallpaper <n>, set stepgoal <1000-50000>, version, power off|poweroff, reboot bootsel, help");
     } else if (line[0] != '\0') {
         Serial.printf("[CMD] unknown: '%s'\n", line);
     }

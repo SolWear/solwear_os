@@ -31,6 +31,8 @@ private:
     void setRamWindow();
     void setRamPointer();
     void refresh();
+    void writeRam(uint8_t cmd, const uint8_t* data);
+    void writeSolidRam(uint8_t cmd, uint8_t value);
 
     static constexpr uint16_t WIDTH = 200;
     static constexpr uint16_t HEIGHT = 200;
