@@ -24,6 +24,30 @@ void NfcApp::onDestroy() {
 void NfcApp::onEvent(const Event& event) {
     if (event.type != EventType::TOUCH) return;
 
+#if SOLWEAR_HAS_BUTTONS
+    switch (mode_) {
+        case NfcMode::IDLE:
+            if (event.touch.gesture == GestureType::SWIPE_DOWN) { // K1 UP Button (Wait, menu goes up? No, K1 maps to SWIPE_DOWN gesture, which means 'scroll down', moving cursor UP visually)
+                selectedIndex_ = (selectedIndex_ <= 0) ? 2 : selectedIndex_ - 1;
+            } else if (event.touch.gesture == GestureType::SWIPE_UP) { // K2 DOWN Button
+                selectedIndex_ = (selectedIndex_ + 1) % 3;
+            } else if (event.touch.gesture == GestureType::TAP) { // K4 STAR
+                if (selectedIndex_ == 0) { mode_ = NfcMode::SCANNING; }
+                else if (selectedIndex_ == 1) { mode_ = NfcMode::WRITING; }
+                else { mode_ = NfcMode::CONTRACT_TEST; }
+                buzzer.click();
+            } else if (event.touch.gesture == GestureType::SWIPE_RIGHT) { // K3 HASH
+                ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
+            }
+            break;
+            
+        default:
+            if (event.touch.gesture == GestureType::TAP || event.touch.gesture == GestureType::SWIPE_RIGHT) {
+                mode_ = NfcMode::IDLE;
+            }
+            break;
+    }
+#else
     switch (mode_) {
         case NfcMode::IDLE:
             if (event.touch.gesture == GestureType::TAP) {
@@ -41,6 +65,8 @@ void NfcApp::onEvent(const Event& event) {
                     mode_ = NfcMode::CONTRACT_TEST;
                     buzzer.click();
                 }
+            } else if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+                ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
             }
             break;
 
@@ -48,18 +74,19 @@ void NfcApp::onEvent(const Event& event) {
         case NfcMode::WRITE_OK:
         case NfcMode::WRITE_FAIL:
         case NfcMode::CONTRACT_TEST:
-            if (event.touch.gesture == GestureType::TAP) {
+            if (event.touch.gesture == GestureType::TAP || event.touch.gesture == GestureType::SWIPE_RIGHT) {
                 mode_ = NfcMode::IDLE;
             }
             break;
 
         case NfcMode::SCANNING:
         case NfcMode::WRITING:
-            if (event.touch.gesture == GestureType::TAP) {
+            if (event.touch.gesture == GestureType::TAP || event.touch.gesture == GestureType::SWIPE_RIGHT) {
                 mode_ = NfcMode::IDLE;  // Cancel
             }
             break;
     }
+#endif
 }
 
 void NfcApp::update(uint32_t dt) {
@@ -122,6 +149,19 @@ void NfcApp::renderIdle(TFT_eSprite& canvas) {
     canvas.drawCircle(cx, 70, 16, Theme::ACCENT);
     canvas.drawCircle(cx, 70, 24, Theme::ACCENT);
 
+#if SOLWEAR_HAS_BUTTONS
+    // Scan button
+    Draw::roundRect(canvas, 30, 110, 180, 40, Theme::CORNER_RADIUS, selectedIndex_ == 0 ? TFT_WHITE : Theme::ACCENT);
+    Draw::drawCenteredText(canvas, "Scan Tag", 120, 2, selectedIndex_ == 0 ? TFT_BLACK : Theme::BG_PRIMARY);
+
+    // Write button
+    Draw::roundRect(canvas, 30, 165, 180, 40, Theme::CORNER_RADIUS, selectedIndex_ == 1 ? TFT_WHITE : Theme::ACCENT_SOL);
+    Draw::drawCenteredText(canvas, "Write Address", 175, 2, selectedIndex_ == 1 ? TFT_BLACK : Theme::TEXT_PRIMARY);
+
+    // Contract test button
+    Draw::roundRect(canvas, 30, 220, 180, 40, Theme::CORNER_RADIUS, selectedIndex_ == 2 ? TFT_WHITE : Theme::BG_CARD);
+    Draw::drawCenteredText(canvas, "Contract Test", 230, 2, selectedIndex_ == 2 ? TFT_BLACK : Theme::ACCENT_GREEN);
+#else
     // Scan button
     Draw::roundRect(canvas, 30, 110, 180, 40, Theme::CORNER_RADIUS, Theme::ACCENT);
     Draw::drawCenteredText(canvas, "Scan Tag", 120, 2, Theme::BG_PRIMARY);
@@ -133,6 +173,7 @@ void NfcApp::renderIdle(TFT_eSprite& canvas) {
     // Contract test button
     Draw::roundRect(canvas, 30, 220, 180, 40, Theme::CORNER_RADIUS, Theme::BG_CARD);
     Draw::drawCenteredText(canvas, "Contract Test", 230, 2, Theme::ACCENT_GREEN);
+#endif
 }
 
 void NfcApp::renderScanning(TFT_eSprite& canvas) {

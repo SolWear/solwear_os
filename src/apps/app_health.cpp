@@ -17,12 +17,22 @@ void HealthApp::onCreate() {
 void HealthApp::onEvent(const Event& event) {
     if (event.type != EventType::TOUCH) return;
 
+#if SOLWEAR_HAS_BUTTONS
+    if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+        ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
+    } else if (event.touch.gesture == GestureType::SWIPE_UP || event.touch.gesture == GestureType::TAP) {
+        if (view_ < 1) view_++;
+    } else if (event.touch.gesture == GestureType::SWIPE_DOWN) {
+        if (view_ > 0) view_--;
+    }
+#else
     if (event.touch.gesture == GestureType::SWIPE_LEFT) {
         if (view_ < 1) view_++;
     } else if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
         if (view_ > 0) view_--;
         else ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
     }
+#endif
 }
 
 void HealthApp::update(uint32_t dt) {}

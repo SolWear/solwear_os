@@ -35,4 +35,8 @@ private:
     uint32_t animTimer_ = 0;
     uint8_t animFrame_ = 0;
     uint32_t resultTime_ = 0;
+    
+#if SOLWEAR_HAS_BUTTONS
+    int8_t selectedIndex_ = 0;
+#endif
 };

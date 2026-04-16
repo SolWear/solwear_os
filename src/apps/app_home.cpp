@@ -22,6 +22,40 @@ void HomeApp::onCreate() {
 void HomeApp::onEvent(const Event& event) {
     if (event.type != EventType::TOUCH) return;
 
+#if SOLWEAR_HAS_BUTTONS
+    auto& registry = AppRegistry::instance();
+    uint8_t totalApps = 0;
+    for (uint8_t i = 0; i < registry.getCount(); i++) {
+        AppId id = registry.getEntries()[i].id;
+        if (id != APP_WATCHFACE && id != APP_HOME && id != APP_CHARGING) totalApps++;
+    }
+    if (highlightIdx_ < 0) highlightIdx_ = 0;
+
+    if (event.touch.gesture == GestureType::SWIPE_DOWN) {
+        highlightIdx_ = (highlightIdx_ <= 0) ? totalApps - 1 : highlightIdx_ - 1;
+        return;
+    } else if (event.touch.gesture == GestureType::SWIPE_UP) {
+        highlightIdx_ = (highlightIdx_ + 1) % totalApps;
+        return;
+    } else if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+        ScreenManager::instance().popScreen(Transition::SLIDE_DOWN);
+        return;
+    } else if (event.touch.gesture == GestureType::TAP) {
+        uint8_t gridIdx = 0;
+        for (uint8_t i = 0; i < registry.getCount(); i++) {
+            const AppEntry* entry = &registry.getEntries()[i];
+            if (entry->id == APP_WATCHFACE || entry->id == APP_HOME || entry->id == APP_CHARGING) continue;
+            if (gridIdx == highlightIdx_) {
+                highlightTime_ = millis();
+                buzzer.click();
+                ScreenManager::instance().pushScreen(entry->id, Transition::SLIDE_LEFT);
+                return;
+            }
+            gridIdx++;
+        }
+        return;
+    }
+#else
     if (event.touch.gesture == GestureType::SWIPE_DOWN) {
         ScreenManager::instance().popScreen(Transition::SLIDE_DOWN);
         return;
@@ -66,6 +100,7 @@ void HomeApp::onEvent(const Event& event) {
             }
         }
     }
+#endif
 }
 
 void HomeApp::update(uint32_t dt) {

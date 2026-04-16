@@ -35,14 +35,23 @@ void StatsApp::onDestroy() {
 void StatsApp::onEvent(const Event& event) {
     if (event.type != EventType::TOUCH) return;
 
-    if (event.touch.gesture == GestureType::SWIPE_LEFT) {
+#if SOLWEAR_HAS_BUTTONS
+    if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+        ScreenManager::instance().popScreen();
+    } else if (event.touch.gesture == GestureType::TAP ||
+               event.touch.gesture == GestureType::SWIPE_UP ||
+               event.touch.gesture == GestureType::SWIPE_DOWN) {
         page_ = (page_ + 1) % 2;
-    } else if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+    }
+#else
+    if (event.touch.gesture == GestureType::SWIPE_LEFT ||
+        event.touch.gesture == GestureType::SWIPE_RIGHT) {
         page_ = (page_ + 1) % 2;
     } else if (event.touch.gesture == GestureType::SWIPE_DOWN ||
                event.touch.gesture == GestureType::SWIPE_UP) {
         ScreenManager::instance().popScreen();
     }
+#endif
 }
 
 void StatsApp::update(uint32_t dt) {

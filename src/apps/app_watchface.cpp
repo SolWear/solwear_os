@@ -20,13 +20,17 @@ void WatchFaceApp::onEvent(const Event& event) {
 
     switch (event.touch.gesture) {
         case GestureType::SWIPE_UP:
-            // Open home screen
             ScreenManager::instance().pushScreen(APP_HOME, Transition::SLIDE_UP);
             break;
         case GestureType::TAP:
-            // Cycle watch face style
             style_ = (WatchFaceStyle)(((uint8_t)style_ + 1) % (uint8_t)WatchFaceStyle::STYLE_COUNT);
             break;
+#if SOLWEAR_HAS_BUTTONS
+        case GestureType::SWIPE_DOWN:
+            // K1: cycle face backwards
+            style_ = (WatchFaceStyle)(((uint8_t)style_ + (uint8_t)WatchFaceStyle::STYLE_COUNT - 1) % (uint8_t)WatchFaceStyle::STYLE_COUNT);
+            break;
+#endif
         default:
             break;
     }

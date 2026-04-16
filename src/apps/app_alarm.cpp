@@ -26,6 +26,37 @@ void AlarmApp::onEvent(const Event& event) {
         return;
     }
 
+#if SOLWEAR_HAS_BUTTONS
+    // K3=back always exits; K4=TAP cycles views; K1/K2 are contextual per view
+    if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+        ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
+        return;
+    }
+    if (event.touch.gesture == GestureType::TAP) {
+        view_ = (view_ + 1) % 2; buzzer.click();
+        return;
+    }
+    if (view_ == 0) {
+        if (event.touch.gesture == GestureType::SWIPE_DOWN) {
+            alarmHour_ = (alarmHour_ + 1) % 24; buzzer.click();
+        } else if (event.touch.gesture == GestureType::SWIPE_UP) {
+            alarmMin_ = (alarmMin_ + 5) % 60; buzzer.click();
+        }
+    } else {
+        if (event.touch.gesture == GestureType::SWIPE_UP) {
+            if (!swRunning_) { swRunning_ = true; swStartTime_ = millis() - swElapsed_; }
+            else { swRunning_ = false; swElapsed_ = millis() - swStartTime_; }
+            buzzer.click();
+        } else if (event.touch.gesture == GestureType::SWIPE_DOWN) {
+            if (swRunning_) {
+                if (swLapCount_ < 5) swLaps_[swLapCount_++] = millis() - swStartTime_;
+            } else {
+                swElapsed_ = 0; swLapCount_ = 0;
+            }
+            buzzer.click();
+        }
+    }
+#else
     // Switch views
     if (event.touch.gesture == GestureType::SWIPE_LEFT && view_ < 1) {
         view_++;
@@ -88,6 +119,7 @@ void AlarmApp::onEvent(const Event& event) {
             }
         }
     }
+#endif
 }
 
 void AlarmApp::update(uint32_t dt) {
@@ -143,11 +175,17 @@ void AlarmApp::renderAlarmSet(TFT_eSprite& canvas) {
     snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", alarmHour_, alarmMin_);
     Draw::drawCenteredText(canvas, timeBuf, 90, 7, Theme::TEXT_PRIMARY);
 
-    // Tap hints
+#if SOLWEAR_HAS_BUTTONS
+    canvas.setTextColor(Theme::TEXT_MUTED);
+    canvas.drawString("K1:+1h", 20, 150, 1);
+    int16_t tw = canvas.textWidth("K2:+5m", 1);
+    canvas.drawString("K2:+5m", SCREEN_WIDTH - 20 - tw, 150, 1);
+#else
     canvas.setTextColor(Theme::TEXT_MUTED);
     canvas.drawString("Tap: +1h", 20, 150, 1);
     int16_t tw = canvas.textWidth("Tap: +5m", 1);
     canvas.drawString("Tap: +5m", SCREEN_WIDTH - 20 - tw, 150, 1);
+#endif
 
     // Enable/disable toggle
     uint16_t btnColor = alarmEnabled_ ? Theme::SUCCESS : Theme::BG_CARD;

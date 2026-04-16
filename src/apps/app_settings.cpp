@@ -28,9 +28,62 @@ void SettingsApp::onDestroy() {
     statusBar.clearTitle();
 }
 
+void SettingsApp::applyItem(int8_t item) {
+    buzzer.click();
+    switch (item) {
+        case 0:
+            settings_.brightness += 20;
+            if (settings_.brightness > 100) settings_.brightness = 20;
+            display.setBrightness(settings_.brightness);
+            break;
+        case 1:
+            settings_.soundEnabled = !settings_.soundEnabled;
+            buzzer.setEnabled(settings_.soundEnabled);
+            break;
+        case 2:
+            settings_.vibrationEnabled = !settings_.vibrationEnabled;
+            break;
+        case 3:
+            settings_.watchFaceIndex = (settings_.watchFaceIndex + 1) % (uint8_t)WatchFaceStyle::STYLE_COUNT;
+            break;
+        case 4:
+            settings_.timeFormat24h = !settings_.timeFormat24h;
+            break;
+        case 5:
+            settings_.wallpaperIndex = (settings_.wallpaperIndex + 1) % Wallpapers::COUNT;
+            break;
+        case 6:
+            settings_.stepGoal += 1000;
+            if (settings_.stepGoal > 30000) settings_.stepGoal = 5000;
+            break;
+        case 7:
+            break;
+    }
+}
+
 void SettingsApp::onEvent(const Event& event) {
     if (event.type != EventType::TOUCH) return;
 
+#if SOLWEAR_HAS_BUTTONS
+    if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+        ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
+        return;
+    }
+    if (event.touch.gesture == GestureType::SWIPE_DOWN) {
+        if (selectedItem_ > 0) selectedItem_--;
+        if (selectedItem_ < scrollOffset_) scrollOffset_ = selectedItem_;
+        return;
+    }
+    if (event.touch.gesture == GestureType::SWIPE_UP) {
+        if (selectedItem_ < ITEM_COUNT - 1) selectedItem_++;
+        if (selectedItem_ >= scrollOffset_ + 6) scrollOffset_ = selectedItem_ - 5;
+        return;
+    }
+    if (event.touch.gesture == GestureType::TAP) {
+        applyItem(selectedItem_);
+        return;
+    }
+#else
     if (event.touch.gesture == GestureType::SWIPE_UP) {
         if (scrollOffset_ < ITEM_COUNT - 6) scrollOffset_++;
         return;
@@ -39,44 +92,17 @@ void SettingsApp::onEvent(const Event& event) {
         if (scrollOffset_ > 0) scrollOffset_--;
         return;
     }
-
+    if (event.touch.gesture == GestureType::SWIPE_RIGHT) {
+        ScreenManager::instance().popScreen(Transition::SLIDE_RIGHT);
+        return;
+    }
     if (event.touch.gesture == GestureType::TAP) {
         int16_t ty = event.touch.y - APP_AREA_Y;
         int8_t item = ty / ITEM_HEIGHT + scrollOffset_;
         if (item < 0 || item >= ITEM_COUNT) return;
-
-        buzzer.click();
-
-        switch (item) {
-            case 0: // Brightness
-                settings_.brightness += 20;
-                if (settings_.brightness > 100) settings_.brightness = 20;
-                display.setBrightness(settings_.brightness);
-                break;
-            case 1: // Sound
-                settings_.soundEnabled = !settings_.soundEnabled;
-                buzzer.setEnabled(settings_.soundEnabled);
-                break;
-            case 2: // Vibration
-                settings_.vibrationEnabled = !settings_.vibrationEnabled;
-                break;
-            case 3: // Watch Face
-                settings_.watchFaceIndex = (settings_.watchFaceIndex + 1) % (uint8_t)WatchFaceStyle::STYLE_COUNT;
-                break;
-            case 4: // Time Format
-                settings_.timeFormat24h = !settings_.timeFormat24h;
-                break;
-            case 5: // Wallpaper
-                settings_.wallpaperIndex = (settings_.wallpaperIndex + 1) % Wallpapers::COUNT;
-                break;
-            case 6: // Step Goal
-                settings_.stepGoal += 1000;
-                if (settings_.stepGoal > 30000) settings_.stepGoal = 5000;
-                break;
-            case 7: // About — no action
-                break;
-        }
+        applyItem(item);
     }
+#endif
 }
 
 void SettingsApp::update(uint32_t dt) {}
@@ -88,7 +114,7 @@ void SettingsApp::render(TFT_eSprite& canvas) {
     for (uint8_t i = 0; i < 7 && (i + scrollOffset_) < ITEM_COUNT; i++) {
         int16_t y = APP_AREA_Y + i * ITEM_HEIGHT;
         if (y + ITEM_HEIGHT > SCREEN_HEIGHT) break;
-        renderItem(canvas, i + scrollOffset_, y);
+        renderItem(canvas, i + scrollOffset_, y, (i + scrollOffset_) == selectedItem_);
     }
 
     // Scroll indicator
@@ -99,9 +125,11 @@ void SettingsApp::render(TFT_eSprite& canvas) {
     }
 }
 
-void SettingsApp::renderItem(TFT_eSprite& canvas, uint8_t idx, int16_t y) {
-    // Item background
-    canvas.fillRect(0, y, SCREEN_WIDTH, ITEM_HEIGHT - 1, Theme::BG_PRIMARY);
+void SettingsApp::renderItem(TFT_eSprite& canvas, uint8_t idx, int16_t y, bool selected) {
+    uint16_t bg = selected ? Theme::BG_CARD : Theme::BG_PRIMARY;
+    canvas.fillRect(0, y, SCREEN_WIDTH, ITEM_HEIGHT - 1, bg);
+    if (selected)
+        canvas.drawFastHLine(0, y, 3, Theme::ACCENT);
     canvas.drawFastHLine(Theme::PADDING, y + ITEM_HEIGHT - 1, SCREEN_WIDTH - Theme::PADDING * 2, Theme::BG_SECONDARY);
 
     // Name

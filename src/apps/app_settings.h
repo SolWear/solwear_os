@@ -15,9 +15,10 @@ private:
     static constexpr uint8_t ITEM_COUNT = 8;
     static constexpr uint8_t ITEM_HEIGHT = 36;
 
-    void renderItem(TFT_eSprite& canvas, uint8_t idx, int16_t y);
+    void applyItem(int8_t item);
+    void renderItem(TFT_eSprite& canvas, uint8_t idx, int16_t y, bool selected);
 
     Settings settings_;
     int8_t scrollOffset_ = 0;
-    int8_t selectedItem_ = -1;
+    int8_t selectedItem_ = 0;
 };

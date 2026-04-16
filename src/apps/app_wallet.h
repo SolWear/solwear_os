@@ -15,5 +15,5 @@ private:
     void renderHistory(TFT_eSprite& canvas);
 
     WalletData wallet_;
-    uint8_t view_ = 0;  // 0=address, 1=balance, 2=history
+    uint8_t view_ = 0;
 };

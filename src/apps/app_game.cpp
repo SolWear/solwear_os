@@ -57,6 +57,7 @@ void GameApp::onEvent(const Event& event) {
     }
 
     // Direction controls
+    // Buttons: K1=SWIPE_DOWN, K2=SWIPE_UP, K3=SWIPE_RIGHT (back/pause), K4=TAP=turn left
     switch (event.touch.gesture) {
         case GestureType::SWIPE_UP:
             if (dir_ != Direction::DOWN) nextDir_ = Direction::UP;
@@ -70,6 +71,11 @@ void GameApp::onEvent(const Event& event) {
         case GestureType::SWIPE_RIGHT:
             if (dir_ != Direction::LEFT) nextDir_ = Direction::RIGHT;
             break;
+#if SOLWEAR_HAS_BUTTONS
+        case GestureType::TAP:
+            if (dir_ != Direction::RIGHT) nextDir_ = Direction::LEFT;
+            break;
+#endif
         default:
             break;
     }
