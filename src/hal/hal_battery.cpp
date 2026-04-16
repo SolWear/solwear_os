@@ -32,13 +32,25 @@ static uint8_t voltageToPercent(float v) {
 }
 
 void HalBattery::init() {
+#if defined(ARDUINO_ARCH_RP2040)
     analogReadResolution(12);  // 12-bit ADC (0-4095)
+#endif
     update();
 }
 
 void HalBattery::update() {
+#if SOLWEAR_HAS_BATTERY
+#if defined(ESP8266) || defined(ESP32)
+    rawAdc_ = analogRead(PIN_BATTERY_ADC);
+    float v = (rawAdc_ / 4095.0f) * 3.3f * divider_; // ESP32 ADC is 12-bit by default
+#else
     rawAdc_ = readStableRawAdc_();
     float v = (rawAdc_ / 4095.0f) * 3.3f * divider_;
+#endif
+#else
+    rawAdc_ = 0;
+    float v = 4.2f;
+#endif
 
     if (firstRead_) {
         smoothedAdc_ = v;

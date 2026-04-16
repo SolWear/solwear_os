@@ -39,6 +39,13 @@ private:
     int16_t startX_ = 0, startY_ = 0;
     uint32_t touchStartTime_ = 0;
     uint32_t lastPollTime_ = 0;
+    
+#if SOLWEAR_HAS_BUTTONS
+    bool lastUp_ = true;
+    bool lastDown_ = true;
+    bool lastHash_ = true;
+    bool lastStar_ = true;
+#endif
 };
 
 extern HalTouch touch;

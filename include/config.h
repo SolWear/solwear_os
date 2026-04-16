@@ -18,6 +18,10 @@
 #define SOLWEAR_TARGET_DISPLAY "st7789-240x280"
 #endif
 
+#ifndef SOLWEAR_GRAYSCALE_UI
+#define SOLWEAR_GRAYSCALE_UI 0
+#endif
+
 #ifndef SOLWEAR_PROTO_CAPS
 #define SOLWEAR_PROTO_CAPS "status,watch-control,apps,diagnostics,uf2"
 #endif
@@ -32,6 +36,10 @@
 
 #ifndef SOLWEAR_HAS_TOUCH
 #define SOLWEAR_HAS_TOUCH 1
+#endif
+
+#ifndef SOLWEAR_HAS_BUTTONS
+#define SOLWEAR_HAS_BUTTONS 0
 #endif
 
 #ifndef SOLWEAR_HAS_IMU
@@ -81,8 +89,26 @@
 #define PIN_EINK_BUSY   19
 #endif
 
+// --- Hardware Buttons (Prototype E: ESP32-S3 + 4 Buttons) ---
+#ifndef PIN_BUTTON_UP
+#define PIN_BUTTON_UP       11 // K1
+#endif
+#ifndef PIN_BUTTON_DOWN
+#define PIN_BUTTON_DOWN     10 // K2
+#endif
+#ifndef PIN_BUTTON_HASH
+#define PIN_BUTTON_HASH     9  // K3
+#endif
+#ifndef PIN_BUTTON_STAR
+#define PIN_BUTTON_STAR     6  // K4
+#endif
+
+#ifndef SCREEN_WIDTH
 #define SCREEN_WIDTH    240
+#endif
+#ifndef SCREEN_HEIGHT
 #define SCREEN_HEIGHT   280
+#endif
 
 // --- Touch (CST816S via I2C1) ---
 #define PIN_TOUCH_SDA   6
@@ -99,9 +125,15 @@
 #define IMU_I2C_ADDR    0x6B
 
 // --- NFC (PN532 via I2C0, separate bus) ---
+#ifndef PIN_NFC_SDA
 #define PIN_NFC_SDA     16
+#endif
+#ifndef PIN_NFC_SCL
 #define PIN_NFC_SCL     17
-#define NFC_I2C_ADDR    0x24
+#endif
+#ifndef NFC_I2C_ADDR
+#define NFC_I2C_ADDR    0x24  // or 0x48 / default
+#endif
 
 // --- Battery (ADC) ---
 #define PIN_BATTERY_ADC 29

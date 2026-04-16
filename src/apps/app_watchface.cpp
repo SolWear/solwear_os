@@ -195,6 +195,17 @@ void WatchFaceApp::renderSolana(TFT_eSprite& canvas) {
     formatClock(buf, sizeof(buf), false);
     Draw::drawCenteredText(canvas, buf, 40, 7, Theme::TEXT_PRIMARY);
 
+    const uint8_t gmFont = 5;
+    const int16_t gmY = 76;
+    const int16_t gmX = (SCREEN_WIDTH - canvas.textWidth("GM", gmFont)) / 2;
+    canvas.setTextColor(Theme::ACCENT_SOL);
+    canvas.drawString("GM", gmX - 1, gmY, gmFont);
+    canvas.drawString("GM", gmX + 1, gmY, gmFont);
+    canvas.drawString("GM", gmX, gmY - 1, gmFont);
+    canvas.drawString("GM", gmX, gmY + 1, gmFont);
+    canvas.setTextColor(Theme::TEXT_PRIMARY);
+    canvas.drawString("GM", gmX, gmY, gmFont);
+
     drawSolanaBar(48, 96, 144, 20, 16, Theme::ACCENT_SOL);
     drawSolanaBar(48, 132, 144, 20, 16, Theme::ACCENT);
     drawSolanaBar(48, 168, 144, 20, 16, Theme::ACCENT_GREEN);

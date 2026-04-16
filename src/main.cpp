@@ -342,9 +342,39 @@ static void einkDrawSolanaBar(int16_t x, int16_t y, int16_t w, int16_t h, int16_
     }
 }
 
+static void einkDrawGlyphG(int16_t x, int16_t y, int16_t w, int16_t h) {
+    const int16_t t = 5;
+    const int16_t midY = y + h / 2 - t / 2;
+
+    eink.fillRect(x, y, w, t, true);
+    eink.fillRect(x, y, t, h, true);
+    eink.fillRect(x, y + h - t, w, t, true);
+    eink.fillRect(x + w - t, midY, t, h - (h / 2 - t / 2), true);
+    eink.fillRect(x + w / 2 - 1, midY, w / 2 + 1, t, true);
+}
+
+static void einkDrawGlyphM(int16_t x, int16_t y, int16_t w, int16_t h) {
+    const int16_t t = 5;
+    eink.fillRect(x, y, t, h, true);
+    eink.fillRect(x + w - t, y, t, h, true);
+    for (int16_t i = 0; i < t; ++i) {
+        eink.drawLine(x + t + i, y, x + w / 2, y + h / 2 + 2, true);
+        eink.drawLine(x + w - t - 1 - i, y, x + w / 2, y + h / 2 + 2, true);
+    }
+}
+
+static void einkDrawGmMonogram(int16_t x, int16_t y) {
+    const int16_t glyphW = 34;
+    const int16_t glyphH = 26;
+    einkDrawGlyphG(x, y, glyphW, glyphH);
+    einkDrawGlyphM(x + glyphW + 10, y, glyphW, glyphH);
+}
+
 static void einkDrawWatchfaceSolana(const DateTime& dt) {
     einkDrawTopClockBar(dt);
     eink.drawRect(12, 36, 176, 152, true);
+
+    einkDrawGmMonogram(61, 40);
 
     // Stylized Solana mark in monochrome e-ink.
     einkDrawSolanaBar(48, 68, 92, 14, 10);
