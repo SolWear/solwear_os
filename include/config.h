@@ -89,18 +89,19 @@
 #define PIN_EINK_BUSY   19
 #endif
 
-// --- Hardware Buttons (Prototype E: ESP32-S3 + 4 Buttons) ---
+// --- Hardware Buttons (Prototype 2 / E: ESP32-S3 + 4 Buttons on display board)
+// K1..K4 are the four tact switches on the ST7789 1.3" module.
 #ifndef PIN_BUTTON_UP
-#define PIN_BUTTON_UP       11 // K1
+#define PIN_BUTTON_UP       13 // K1
 #endif
 #ifndef PIN_BUTTON_DOWN
-#define PIN_BUTTON_DOWN     10 // K2
+#define PIN_BUTTON_DOWN     12 // K2
 #endif
 #ifndef PIN_BUTTON_HASH
-#define PIN_BUTTON_HASH     9  // K3
+#define PIN_BUTTON_HASH     11 // K3
 #endif
 #ifndef PIN_BUTTON_STAR
-#define PIN_BUTTON_STAR     6  // K4
+#define PIN_BUTTON_STAR     10 // K4
 #endif
 
 #ifndef SCREEN_WIDTH
@@ -136,7 +137,11 @@
 #endif
 
 // --- Battery (ADC) ---
+// RP2040 default is GP29 (VSYS/3). ESP32-S3 override comes from build_flags
+// (Prototype 2 uses GP2 with an external 100K/100K divider from TP4056 B+).
+#ifndef PIN_BATTERY_ADC
 #define PIN_BATTERY_ADC 29
+#endif
 #define BATTERY_ADC_CH  3
 
 // --- Buzzer (PWM) ---
@@ -202,7 +207,12 @@
 #define BATTERY_LOW_V       3.4f
 #define BATTERY_CRITICAL_V  3.2f
 #define BATTERY_EMPTY_V     3.0f
-#define BATTERY_DIVIDER     3.0f    // voltage divider ratio (200K/100K on Waveshare board)
+// Voltage divider ratio. Default 3.0 matches the Waveshare RP2040 watch
+// (VSYS/3 via internal 200K/100K). Override per-prototype via build_flags
+// (Prototype 2 uses 2.0 for a 100K/100K divider from TP4056 B+).
+#ifndef BATTERY_DIVIDER
+#define BATTERY_DIVIDER     3.0f
+#endif
 
 // ============================================================
 // Screen Transition

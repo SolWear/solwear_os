@@ -34,6 +34,12 @@ static uint8_t voltageToPercent(float v) {
 void HalBattery::init() {
 #if defined(ARDUINO_ARCH_RP2040)
     analogReadResolution(12);  // 12-bit ADC (0-4095)
+#elif defined(ESP32)
+    // ESP32-S3: 12-bit default; use 11dB attenuation so 0-3.3V maps to 0-4095.
+    analogReadResolution(12);
+#ifdef PIN_BATTERY_ADC
+    analogSetPinAttenuation(PIN_BATTERY_ADC, ADC_11db);
+#endif
 #endif
     update();
 }
