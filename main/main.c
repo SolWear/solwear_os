@@ -895,6 +895,9 @@ void app_main(void)
 
     hal_battery_init(); hal_battery_update();
     hal_nfc_init();
+    if (s_nfc_armed && !hal_nfc_ensure_init()) {
+        ESP_LOGW(TAG, "NFC init will retry in background");
+    }
     wallet_load_public();
 
     if(!wallet_is_onboarded()){ s_screen=SCR_ONBOARD; s_ob=OB_WELCOME; }
@@ -922,6 +925,13 @@ void app_main(void)
         // Battery
         static uint32_t bat=0; bat+=dt;
         if(bat>=30000){bat=0;hal_battery_update();}
+
+        // NFC is armed by default; keep trying if PN532 was not ready at boot.
+        static uint32_t nfc_retry=0; nfc_retry+=dt;
+        if(s_nfc_armed&&!hal_nfc_is_ready()&&nfc_retry>=1000){
+            nfc_retry=0;
+            hal_nfc_ensure_init();
+        }
 
         // TX timer
         if(s_tx_overlay&&s_tx_state==TX_TIMER){

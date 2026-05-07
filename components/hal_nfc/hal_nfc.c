@@ -374,18 +374,23 @@ bool hal_nfc_ensure_init(void)
         .scl_pullup_en    = GPIO_PULLUP_ENABLE,
         .master.clk_speed = 100000,
     };
-    if (i2c_param_config(I2C_PORT, &cfg) != ESP_OK) return false;
-    if (i2c_driver_install(I2C_PORT, I2C_MODE_MASTER, 0, 0, 0) != ESP_OK) return false;
+    esp_err_t err = i2c_param_config(I2C_PORT, &cfg);
+    if (err != ESP_OK) return false;
+    err = i2c_driver_install(I2C_PORT, I2C_MODE_MASTER, 0, 0, 0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
 
-    uint8_t cmd[] = {0x00,0x00,0xFF,0x02,0xFE,0xD4,0x02,0x2A,0x00};
-    uint8_t resp[12] = {};
-    i2c_master_write_to_device(I2C_PORT, PN532_ADDR, cmd, sizeof(cmd), pdMS_TO_TICKS(100));
-    vTaskDelay(pdMS_TO_TICKS(30));
-    i2c_master_read_from_device(I2C_PORT, PN532_ADDR, resp, sizeof(resp), pdMS_TO_TICKS(100));
-
-    if (resp[1] == 0x00 && resp[2] == 0xFF) {
+    uint8_t fw[8] = {};
+    size_t fw_len = 0;
+    const uint8_t get_firmware[] = {0x02};
+    if (pn532_cmd(get_firmware, sizeof(get_firmware), 0x03,
+                  fw, sizeof(fw), &fw_len, 120) && fw_len >= 4) {
+        const uint8_t sam_config[] = {0x14,0x01,0x14,0x01};
+        if (!pn532_cmd(sam_config, sizeof(sam_config), 0x15, NULL, 0, NULL, 120)) {
+            ESP_LOGW(TAG, "PN532 SAMConfiguration failed");
+            return false;
+        }
         s_ready = true;
-        ESP_LOGI(TAG, "PN532 v%d.%d", resp[7], resp[8]);
+        ESP_LOGI(TAG, "PN532 v%d.%d", fw[1], fw[2]);
         return true;
     }
     ESP_LOGW(TAG, "PN532 not found");
@@ -404,21 +409,22 @@ bool hal_nfc_is_ready(void) { return s_ready; }
 bool hal_nfc_wait_tag(uint16_t timeout_ms, nfc_tag_t *tag)
 {
     if (!s_ready || !tag) return false;
-    uint8_t cmd[] = {0x00,0x00,0xFF,0x04,0xFC,0xD4,0x4A,0x01,0x00,0xE1,0x00};
-    i2c_master_write_to_device(I2C_PORT, PN532_ADDR, cmd, sizeof(cmd), pdMS_TO_TICKS(timeout_ms));
-    uint32_t w = timeout_ms < 60 ? timeout_ms : 60;
-    vTaskDelay(pdMS_TO_TICKS(w));
-    uint8_t resp[20] = {};
-    if (i2c_master_read_from_device(I2C_PORT, PN532_ADDR, resp, sizeof(resp), pdMS_TO_TICKS(50)) != ESP_OK)
+    const uint8_t cmd[] = {0x4A,0x01,0x00};
+    uint8_t resp[32] = {};
+    size_t resp_len = 0;
+    if (!pn532_cmd(cmd, sizeof(cmd), 0x4B, resp, sizeof(resp), &resp_len, timeout_ms)) {
         return false;
-    if (resp[6]!=0xD5 || resp[7]!=0x4B || resp[8]==0) return false;
-    tag->uid_len = resp[12]; if (tag->uid_len > 7) tag->uid_len = 7;
-    memcpy(tag->uid, &resp[13], tag->uid_len);
+    }
+    if (resp_len < 7 || resp[0] == 0) return false;
+    uint8_t uid_len = resp[5];
+    if (resp_len < (size_t)(6 + uid_len)) return false;
+    tag->uid_len = uid_len > 7 ? 7 : uid_len;
+    memcpy(tag->uid, &resp[6], tag->uid_len);
     return true;
 }
 
 // ── NDEF parser — aligned with Android NdefProtocol.kt ───────────────────
-// Android External Type records: type = "solvare:sign_request"
+// Android External Type records: type = "solwear:sign_request"
 // Payload = raw JSON bytes: {"version":1,"tx_bytes":"<base64>"}
 
 static bool parse_ndef(const uint8_t *data, size_t len)
@@ -450,7 +456,7 @@ static bool parse_ndef(const uint8_t *data, size_t len)
         const char *payload = (const char *)(data + i);
         i += pay_len;
 
-        // Match: "solvare:sign_request"
+        // Match: "solwear:sign_request" and legacy "solvare:sign_request"
         if (strstr(type_str, "sign_request")) {
             char pay[512] = {};
             size_t cp = pay_len < sizeof(pay) - 1 ? pay_len : sizeof(pay) - 1;
@@ -544,7 +550,7 @@ bool hal_nfc_write_sign_response(const uint8_t sig[64], const char *nonce)
 
     uint8_t ndef[180] = {};
     size_t ndef_len = 0;
-    if (!build_external_ndef("solvare:sign_response", json, ndef, sizeof(ndef), &ndef_len)) {
+    if (!build_external_ndef("solwear:sign_response", json, ndef, sizeof(ndef), &ndef_len)) {
         return false;
     }
 
@@ -576,7 +582,7 @@ bool hal_nfc_write_wallet_ndef(const uint8_t pubkey[32])
 
     uint8_t ndef[180] = {};
     size_t ndef_len = 0;
-    if (!build_external_ndef("solvare:wallet", json, ndef, sizeof(ndef), &ndef_len)) {
+    if (!build_external_ndef("solwear:wallet", json, ndef, sizeof(ndef), &ndef_len)) {
         return false;
     }
 

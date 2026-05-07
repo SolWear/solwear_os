@@ -31,10 +31,8 @@ static bool save_to_nvs(const uint8_t seed[32], const char *password, const char
     crypto_random(iv,   16);
     crypto_derive_key(password, salt, key);
 
-    // SHA-256(seed) used as verification token until real Ed25519 is wired in.
-    // Replace with crypto_ed25519_pubkey() once tweetnacl is added.
     uint8_t pubkey[32];
-    esp_sha(SHA2_256, seed, 32, pubkey);
+    crypto_ed25519_pubkey(seed, pubkey);
 
     if (!crypto_aes_encrypt(key, iv, seed, enc_seed, 32)) {
         crypto_wipe(key, 32);
@@ -111,17 +109,28 @@ bool wallet_unlock(const char *password)
     crypto_wipe(key, 32);
     if (!ok) return false;
 
-    // Verify password by checking SHA-256(decrypted_seed) == stored pubkey_ref
-    // (We store SHA-256(seed) as "pubkey" until real Ed25519 is implemented)
-    // This ensures wrong password → wrong AES decrypt → wrong seed → wrong hash → rejected
-    uint8_t check_hash[32];
-    esp_sha(SHA2_256, dec_seed, 32, check_hash);
-    if (memcmp(check_hash, pubkey_ref, 32) != 0) {
-        ESP_LOGW(TAG, "Wrong password");
-        crypto_wipe(dec_seed, 32);
-        return false;
+    uint8_t check_pubkey[32];
+    crypto_ed25519_pubkey(dec_seed, check_pubkey);
+    if (memcmp(check_pubkey, pubkey_ref, 32) != 0) {
+        uint8_t legacy_hash[32];
+        esp_sha(SHA2_256, dec_seed, 32, legacy_hash);
+        if (memcmp(legacy_hash, pubkey_ref, 32) == 0) {
+            ESP_LOGI(TAG, "Migrating legacy wallet pubkey to Ed25519");
+            nvs_handle_t wh;
+            if (nvs_open(NVS_NS, NVS_READWRITE, &wh) == ESP_OK) {
+                nvs_set_blob(wh, "pubkey", check_pubkey, 32);
+                nvs_commit(wh);
+                nvs_close(wh);
+            }
+            memcpy(pubkey_ref, check_pubkey, 32);
+        } else {
+            ESP_LOGW(TAG, "Wrong password");
+            crypto_wipe(dec_seed, 32);
+            return false;
+        }
     }
 
+    memcpy(s_pubkey, pubkey_ref, 32);
     memcpy(s_seed, dec_seed, 32);
     crypto_wipe(dec_seed, 32);
     s_unlocked = true;
