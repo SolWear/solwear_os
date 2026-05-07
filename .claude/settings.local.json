@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(git -C \"c:/Users/dedpu/Documents/solwear_org/profile\" status)",
-      "Bash(git -C \"c:/Users/dedpu/Documents/solwear_org/profile\" remote -v)",
-      "Bash(git -C \"c:/Users/dedpu/Documents/solwear_org/profile\" restore README.md)"
-    ]
-  }
-}

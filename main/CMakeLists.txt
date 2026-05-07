@@ -1,0 +1,23 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "ui_roulette.c"
+        "os_events.c"
+        "os_clock.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        st7789
+        hal_buttons
+        hal_nfc
+        hal_battery
+        ui_core
+        wallet
+        nvs_flash
+        spiffs
+        esp_timer
+        esp_lcd
+        driver
+        log
+        heap
+        esp_wifi
+)

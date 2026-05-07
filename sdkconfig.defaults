@@ -1,0 +1,44 @@
+# Target
+CONFIG_IDF_TARGET="esp32s3"
+
+# CPU / clock — 240MHz for smooth 30fps rendering
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240=y
+CONFIG_ESP32S3_SPIRAM_SUPPORT=n
+
+# Flash — S3 Mini has 8MB
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# Partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# USB-Serial/JTAG console — routes ESP_LOG to COM8 (USB-JTAG port)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# WiFi OFF at runtime — WiFi peripheral cannot be removed at compile time on ESP32-S3.
+# We call esp_wifi_stop()/esp_wifi_deinit() in app_main() to free ~30KB RAM.
+# DO NOT add CONFIG_ESP_WIFI_ENABLED=n — not a valid key, causes cmake errors.
+
+# Bluetooth — disable at compile time (valid on ESP32-S3)
+CONFIG_BT_ENABLED=n
+
+# FreeRTOS
+CONFIG_FREERTOS_HZ=1000
+
+# Log level
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+
+# SPI in IRAM for zero-latency DMA transfers
+CONFIG_SPI_MASTER_IN_IRAM=y
+
+# NVS
+CONFIG_NVS_ENCRYPTION=n
+
+# SPIFFS
+CONFIG_SPIFFS_MAX_PARTITIONS=3
+
+# Main task stack — needs room for UI rendering stack frames
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
