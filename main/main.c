@@ -38,7 +38,6 @@ typedef enum {
     SCR_PING_PONG,
     SCR_TETRIS,
     SCR_TAMAGOTCHI,
-    SCR_CHARGING,
 } screen_id_t;
 
 typedef enum { SLIDE_WATCHFACE=0, SLIDE_GRID, SLIDE_COUNT } home_slide_t;
@@ -60,6 +59,8 @@ static bool     s_tx_overlay  = false;
 typedef enum { TX_SHOW, TX_TIMER, TX_CONFIRM2 } tx_state_t;
 static tx_state_t s_tx_state  = TX_SHOW;
 static uint32_t   s_tx_timer  = 0;
+static uint8_t    s_pending_sig[64];
+static bool       s_pending_sig_valid = false;
 
 // Clock
 static int s_h = 12, s_m = 0, s_s = 0;
@@ -609,28 +610,6 @@ static void render_tamagotchi(void)
     ui_str_center(LCD_H-12,"K1=Feed K2=Play K3=Nap",COLOR_GRAY,1);
 }
 
-static uint32_t s_charge_anim=0;
-static void render_charging(void)
-{
-    st7789_fb_fill(COLOR_BLACK);
-    ui_str_center(20,"Charging",COLOR_SOL_GRN,2);
-    int bx=LCD_W/2-38,by=50,bw=76,bh=130;
-    ui_rounded_rect(LCD_W/2-14,by-8,28,10,2,COLOR_WHITE);
-    ui_rounded_rect_outline(bx,by,bw,bh,6,COLOR_WHITE);
-    uint8_t pct=hal_battery_percent();
-    float vis=pct/100.f+(1.f-pct/100.f)*(0.5f+0.5f*sinf(s_charge_anim*0.003f));
-    if(vis>1.f)vis=1.f;
-    int fh=(int)((bh-8)*vis);
-    uint16_t fc=(pct>30)?COLOR_SOL_GRN:(pct>15)?COLOR_YELLOW:COLOR_RED;
-    st7789_fb_rect(bx+4,by+bh-4-fh,bw-8,fh,fc);
-    ui_fill_triangle(LCD_W/2,by+35,LCD_W/2-10,by+75,LCD_W/2+2,by+75,COLOR_WHITE);
-    ui_fill_triangle(LCD_W/2-2,by+75,LCD_W/2+10,by+75,LCD_W/2,by+115,COLOR_WHITE);
-    char ps[8]; snprintf(ps,sizeof(ps),"%d%%",pct);
-    ui_str_center(by+bh+14,ps,COLOR_WHITE,2);
-    char vs[12]; snprintf(vs,sizeof(vs),"%.2fV",hal_battery_mv()/1000.f);
-    ui_str_center(by+bh+34,vs,COLOR_SOL_GRN,1);
-}
-
 static void render_tx_overlay(void)
 {
     // dim bg
@@ -690,7 +669,6 @@ static void handle_ob(btn_event_t ev)
             if(ev==BTN_K3_PRESS){
                 if(s_ob_sel==0){
                     esp_fill_random(s_ob_seed,32);
-                    uint8_t pub[32]={};
                     // pub derivation stubbed until Ed25519 complete
                     snprintf(s_ob_pub4,sizeof(s_ob_pub4),"%02X%02X%02X%02X",
                              s_ob_seed[0],s_ob_seed[1],s_ob_seed[2],s_ob_seed[3]);
@@ -791,7 +769,10 @@ static void handle_tx(btn_event_t ev)
             uint8_t sig[64]={};
             if(wallet_is_unlocked()){
                 wallet_sign(g_nfc_tx.tx_bytes,g_nfc_tx.tx_len,sig);
-                hal_nfc_write_sign_response(sig,g_nfc_tx.nonce);
+                if(!hal_nfc_write_sign_response(sig,g_nfc_tx.nonce)){
+                    memcpy(s_pending_sig,sig,sizeof(s_pending_sig));
+                    s_pending_sig_valid=true;
+                }
                 char line[80]; float sol=(float)(g_nfc_tx.lamports/1000000000ULL)+(float)(g_nfc_tx.lamports%1000000000ULL)/1e9f;
                 snprintf(line,sizeof(line),"-%.4f SOL to %.8s...",(double)sol,g_nfc_tx.to);
                 save_receipt(line); load_receipts();
@@ -888,7 +869,6 @@ static void handle_button(btn_event_t ev)
             }
             if(ev==BTN_K4_PRESS){tama_save();s_screen=SCR_GAMES_MENU;}
             break;
-        case SCR_CHARGING: break;
     }
 }
 
@@ -919,8 +899,6 @@ void app_main(void)
 
     if(!wallet_is_onboarded()){ s_screen=SCR_ONBOARD; s_ob=OB_WELCOME; }
     else { roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); s_screen=SCR_LOCK; }
-    if(hal_battery_charging()) s_screen=SCR_CHARGING;
-
     s_btn_q=xQueueCreate(16,sizeof(btn_event_t));
     hal_buttons_init(on_button);
 
@@ -932,7 +910,7 @@ void app_main(void)
         uint32_t dt=now-last; last=now;
 
         // Timers
-        s_anim+=dt; s_charge_anim+=dt;
+        s_anim+=dt;
         if(s_nfc_widget_ms>dt) s_nfc_widget_ms-=dt; else s_nfc_widget_ms=0;
         tama_anim+=dt; if(tama_anim>=500){tama_anim=0;tama_frame^=1;}
         if(tama_msg_on){tama_msg_t+=dt; if(tama_msg_t>=1500)tama_msg_on=false;}
@@ -943,9 +921,7 @@ void app_main(void)
 
         // Battery
         static uint32_t bat=0; bat+=dt;
-        if(bat>=30000){bat=0;hal_battery_update();
-            if(hal_battery_charging()&&s_screen!=SCR_CHARGING) s_screen=SCR_CHARGING;
-            if(!hal_battery_charging()&&s_screen==SCR_CHARGING) s_screen=SCR_HOME;}
+        if(bat>=30000){bat=0;hal_battery_update();}
 
         // TX timer
         if(s_tx_overlay&&s_tx_state==TX_TIMER){
@@ -967,6 +943,11 @@ void app_main(void)
         if(s_nfc_armed&&hal_nfc_is_ready()){
             nfc_tag_t tag;
             if(hal_nfc_wait_tag(50,&tag)){
+                if(s_pending_sig_valid&&hal_nfc_write_sign_response(s_pending_sig,NULL)){
+                    memset(s_pending_sig,0,sizeof(s_pending_sig));
+                    s_pending_sig_valid=false;
+                    continue;
+                }
                 if(!hal_nfc_process_ndef()){
                     // No sign_request on tag — write our wallet pubkey for Android to read
                     hal_nfc_write_wallet_ndef(wallet_pubkey());
@@ -990,7 +971,6 @@ void app_main(void)
             case SCR_PING_PONG:    render_pong();         break;
             case SCR_TETRIS:       render_tetris();       break;
             case SCR_TAMAGOTCHI:   render_tamagotchi();   break;
-            case SCR_CHARGING:     render_charging();     break;
         }
         if(s_tx_overlay) render_tx_overlay();
         if(s_nfc_widget_ms>0) ui_nfc_widget(s_nfc_widget_armed);

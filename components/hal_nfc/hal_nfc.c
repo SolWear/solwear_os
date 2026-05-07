@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static const char *TAG = "hal_nfc";
 static bool s_ready = false;
@@ -18,6 +19,297 @@ nfc_key_import_t  g_nfc_key_import = {};
 // ── Base64 ───────────────────────────────────────────────────────────────
 static const char kB64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static const char kB58[] =
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+static bool base58_encode(const uint8_t *in, size_t in_len, char *out, size_t out_max)
+{
+    if (!out || out_max == 0) return false;
+    if (!in || in_len == 0) {
+        out[0] = '\0';
+        return true;
+    }
+
+    uint8_t buf[40] = {};
+    if (in_len > sizeof(buf)) return false;
+    memcpy(buf, in, in_len);
+
+    size_t zeros = 0;
+    while (zeros < in_len && buf[zeros] == 0) zeros++;
+
+    char tmp[72] = {};
+    size_t tmp_len = 0;
+    size_t start = zeros;
+    while (start < in_len) {
+        uint32_t rem = 0;
+        for (size_t i = start; i < in_len; i++) {
+            uint32_t v = (rem << 8) | buf[i];
+            buf[i] = (uint8_t)(v / 58);
+            rem = v % 58;
+        }
+        if (tmp_len >= sizeof(tmp)) return false;
+        tmp[tmp_len++] = kB58[rem];
+        while (start < in_len && buf[start] == 0) start++;
+    }
+
+    size_t out_len = zeros + tmp_len;
+    if (out_len + 1 > out_max) return false;
+
+    size_t p = 0;
+    for (size_t i = 0; i < zeros; i++) out[p++] = '1';
+    while (tmp_len > 0) out[p++] = tmp[--tmp_len];
+    out[p] = '\0';
+    return true;
+}
+
+static bool pn532_cmd(const uint8_t *cmd, size_t cmd_len,
+                      uint8_t expected_code,
+                      uint8_t *out, size_t out_max, size_t *out_len,
+                      uint16_t timeout_ms)
+{
+    if (!cmd || cmd_len == 0 || cmd_len > 262) return false;
+
+    uint8_t frame[272] = {};
+    uint8_t len = (uint8_t)(cmd_len + 1);
+    uint8_t sum = 0xD4;
+    frame[0] = 0x00;
+    frame[1] = 0x00;
+    frame[2] = 0xFF;
+    frame[3] = len;
+    frame[4] = (uint8_t)(0x100 - len);
+    frame[5] = 0xD4;
+    for (size_t i = 0; i < cmd_len; i++) {
+        frame[6 + i] = cmd[i];
+        sum = (uint8_t)(sum + cmd[i]);
+    }
+    frame[6 + cmd_len] = (uint8_t)(0x100 - sum);
+    frame[7 + cmd_len] = 0x00;
+
+    if (i2c_master_write_to_device(I2C_PORT, PN532_ADDR, frame, cmd_len + 8,
+                                   pdMS_TO_TICKS(timeout_ms)) != ESP_OK) {
+        return false;
+    }
+
+    uint8_t raw[300] = {};
+    for (int attempt = 0; attempt < 3; attempt++) {
+        vTaskDelay(pdMS_TO_TICKS(18 + attempt * 12));
+        memset(raw, 0, sizeof(raw));
+        if (i2c_master_read_from_device(I2C_PORT, PN532_ADDR, raw, sizeof(raw),
+                                        pdMS_TO_TICKS(timeout_ms)) != ESP_OK) {
+            continue;
+        }
+
+        int p = -1;
+        for (int i = 0; i < (int)sizeof(raw) - 5; i++) {
+            if (raw[i] == 0x00 && raw[i+1] == 0x00 && raw[i+2] == 0xFF) {
+                p = i;
+                break;
+            }
+        }
+        if (p < 0) continue;
+        if (raw[p+3] == 0x00 && raw[p+4] == 0xFF) continue; // ACK
+
+        uint8_t rlen = raw[p+3];
+        if (rlen < 2 || p + 6 + rlen > (int)sizeof(raw)) continue;
+        uint8_t *data = &raw[p+6];
+        if (data[0] != 0xD5 || data[1] != expected_code) continue;
+
+        size_t payload_len = rlen - 2;
+        if (out && out_max > 0) {
+            if (payload_len > out_max) payload_len = out_max;
+            memcpy(out, data + 2, payload_len);
+        }
+        if (out_len) *out_len = payload_len;
+        return true;
+    }
+    return false;
+}
+
+static bool pn532_in_data_exchange(const uint8_t *apdu, size_t apdu_len,
+                                   uint8_t *resp, size_t resp_max, size_t *resp_len)
+{
+    uint8_t cmd[266] = {};
+    uint8_t out[266] = {};
+    size_t out_len = 0;
+    if (!apdu || apdu_len + 2 > sizeof(cmd)) return false;
+
+    cmd[0] = 0x40;
+    cmd[1] = 0x01;
+    memcpy(cmd + 2, apdu, apdu_len);
+
+    if (!pn532_cmd(cmd, apdu_len + 2, 0x41, out, sizeof(out), &out_len, 120)) {
+        return false;
+    }
+    if (out_len < 1 || out[0] != 0x00) return false;
+
+    size_t data_len = out_len - 1;
+    if (resp && resp_max > 0) {
+        if (data_len > resp_max) data_len = resp_max;
+        memcpy(resp, out + 1, data_len);
+    }
+    if (resp_len) *resp_len = data_len;
+    return true;
+}
+
+static bool apdu_ok(const uint8_t *resp, size_t len)
+{
+    return len >= 2 && resp[len - 2] == 0x90 && resp[len - 1] == 0x00;
+}
+
+static bool type4_select_ndef_file(void)
+{
+    static const uint8_t select_app[] = {
+        0x00,0xA4,0x04,0x00,0x07,0xD2,0x76,0x00,0x00,0x85,0x01,0x01
+    };
+    static const uint8_t select_file[] = {
+        0x00,0xA4,0x00,0x0C,0x02,0xE1,0x04
+    };
+    uint8_t resp[32] = {};
+    size_t len = 0;
+
+    if (!pn532_in_data_exchange(select_app, sizeof(select_app), resp, sizeof(resp), &len) ||
+        !apdu_ok(resp, len)) {
+        return false;
+    }
+    memset(resp, 0, sizeof(resp));
+    len = 0;
+    return pn532_in_data_exchange(select_file, sizeof(select_file), resp, sizeof(resp), &len) &&
+           apdu_ok(resp, len);
+}
+
+static bool type4_read_binary(uint16_t offset, uint8_t le, uint8_t *data, size_t *data_len)
+{
+    uint8_t apdu[] = {0x00,0xB0,(uint8_t)(offset >> 8),(uint8_t)offset,le};
+    uint8_t resp[270] = {};
+    size_t len = 0;
+    if (!pn532_in_data_exchange(apdu, sizeof(apdu), resp, sizeof(resp), &len) ||
+        !apdu_ok(resp, len)) {
+        return false;
+    }
+    size_t n = len - 2;
+    if (data && n > 0) memcpy(data, resp, n);
+    if (data_len) *data_len = n;
+    return true;
+}
+
+static bool type4_update_binary(uint16_t offset, const uint8_t *data, size_t data_len)
+{
+    if (!data || data_len > 240) return false;
+    uint8_t apdu[245] = {};
+    uint8_t resp[16] = {};
+    size_t len = 0;
+    apdu[0] = 0x00;
+    apdu[1] = 0xD6;
+    apdu[2] = (uint8_t)(offset >> 8);
+    apdu[3] = (uint8_t)offset;
+    apdu[4] = (uint8_t)data_len;
+    memcpy(apdu + 5, data, data_len);
+    return pn532_in_data_exchange(apdu, data_len + 5, resp, sizeof(resp), &len) &&
+           apdu_ok(resp, len);
+}
+
+static bool type4_read_ndef(uint8_t *ndef, size_t ndef_max, size_t *ndef_len)
+{
+    if (!type4_select_ndef_file()) return false;
+
+    uint8_t hdr[2] = {};
+    size_t got = 0;
+    if (!type4_read_binary(0, 2, hdr, &got) || got != 2) return false;
+
+    uint16_t len = ((uint16_t)hdr[0] << 8) | hdr[1];
+    if (len == 0 || len > ndef_max) return false;
+
+    uint16_t off = 2;
+    size_t total = 0;
+    while (total < len) {
+        uint8_t chunk[240] = {};
+        size_t chunk_len = 0;
+        uint8_t want = (uint8_t)((len - total) > sizeof(chunk) ? sizeof(chunk) : (len - total));
+        if (!type4_read_binary(off, want, chunk, &chunk_len) || chunk_len == 0) return false;
+        memcpy(ndef + total, chunk, chunk_len);
+        total += chunk_len;
+        off += (uint16_t)chunk_len;
+    }
+
+    if (ndef_len) *ndef_len = total;
+    return true;
+}
+
+static bool type4_write_ndef(const uint8_t *ndef, size_t ndef_len)
+{
+    if (!ndef || ndef_len == 0 || ndef_len > 1024) return false;
+    if (!type4_select_ndef_file()) return false;
+
+    uint8_t zero_len[2] = {0x00, 0x00};
+    if (!type4_update_binary(0, zero_len, sizeof(zero_len))) return false;
+
+    uint16_t off = 2;
+    size_t sent = 0;
+    while (sent < ndef_len) {
+        size_t chunk_len = (ndef_len - sent) > 220 ? 220 : (ndef_len - sent);
+        if (!type4_update_binary(off, ndef + sent, chunk_len)) return false;
+        sent += chunk_len;
+        off += (uint16_t)chunk_len;
+    }
+
+    uint8_t final_len[2] = {(uint8_t)(ndef_len >> 8), (uint8_t)ndef_len};
+    return type4_update_binary(0, final_len, sizeof(final_len));
+}
+
+static bool build_external_ndef(const char *type, const char *payload,
+                                uint8_t *out, size_t out_max, size_t *out_len)
+{
+    size_t tlen = strlen(type);
+    size_t plen = strlen(payload);
+    size_t need = 3 + tlen + plen;
+    bool short_record = plen <= 255;
+    if (!short_record) need += 3;
+    if (!out || tlen > 255 || need > out_max) return false;
+
+    size_t idx = 0;
+    out[idx++] = short_record ? 0xD4 : 0xC4;
+    out[idx++] = (uint8_t)tlen;
+    if (short_record) {
+        out[idx++] = (uint8_t)plen;
+    } else {
+        out[idx++] = (uint8_t)(plen >> 24);
+        out[idx++] = (uint8_t)(plen >> 16);
+        out[idx++] = (uint8_t)(plen >> 8);
+        out[idx++] = (uint8_t)plen;
+    }
+    memcpy(out + idx, type, tlen);
+    idx += tlen;
+    memcpy(out + idx, payload, plen);
+    idx += plen;
+    if (out_len) *out_len = idx;
+    return true;
+}
+
+static bool write_legacy_ntag_ndef(const uint8_t *ndef, size_t ndef_len)
+{
+    if (!ndef || ndef_len == 0 || ndef_len > 250) return false;
+    uint8_t msg[260] = {};
+    size_t idx = 0;
+    msg[idx++] = 0x03;
+    msg[idx++] = (uint8_t)ndef_len;
+    memcpy(msg + idx, ndef, ndef_len);
+    idx += ndef_len;
+    msg[idx++] = 0xFE;
+
+    for (uint8_t pg = 0; pg < (idx + 3) / 4; pg++) {
+        uint8_t pd[4] = {};
+        for (int j = 0; j < 4 && pg * 4 + j < idx; j++) pd[j] = msg[pg * 4 + j];
+        uint8_t wr[] = {
+            0x00,0x00,0xFF,0x07,0xF9,
+            0xD4,0x40,0x01,0xA2,(uint8_t)(4+pg),
+            pd[0],pd[1],pd[2],pd[3],
+            (uint8_t)((0x100-(0xD4+0x40+0x01+0xA2+(4+pg)+pd[0]+pd[1]+pd[2]+pd[3])) & 0xFF),0x00
+        };
+        i2c_master_write_to_device(I2C_PORT, PN532_ADDR, wr, sizeof(wr), pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    return true;
+}
 
 static int b64_val(char c)
 {
@@ -160,8 +452,8 @@ static bool parse_ndef(const uint8_t *data, size_t len)
 
         // Match: "solvare:sign_request"
         if (strstr(type_str, "sign_request")) {
-            char pay[256] = {};
-            size_t cp = pay_len < 255 ? pay_len : 255;
+            char pay[512] = {};
+            size_t cp = pay_len < sizeof(pay) - 1 ? pay_len : sizeof(pay) - 1;
             memcpy(pay, payload, cp);
 
             memset(&g_nfc_tx, 0, sizeof(g_nfc_tx));
@@ -200,6 +492,13 @@ static bool parse_ndef(const uint8_t *data, size_t len)
 bool hal_nfc_process_ndef(void)
 {
     if (!s_ready) return false;
+
+    uint8_t type4_ndef[512] = {};
+    size_t type4_len = 0;
+    if (type4_read_ndef(type4_ndef, sizeof(type4_ndef), &type4_len)) {
+        return parse_ndef(type4_ndef, type4_len);
+    }
+
     uint8_t buf[64] = {};
 
     for (int page = 4; page < 20 && (page-4)*4 < 64; page++) {
@@ -243,31 +542,17 @@ bool hal_nfc_write_sign_response(const uint8_t sig[64], const char *nonce)
                         "{\"version\":1,\"signature\":\"%s\"}", sig_b64);
     if (jlen <= 0 || jlen >= (int)sizeof(json)) return false;
 
-    const char *tname = "solvare:sign_response";
-    uint8_t tlen = (uint8_t)strlen(tname);
-    uint8_t plen = (uint8_t)jlen;
-
-    uint8_t msg[200] = {};
-    uint8_t idx = 0;
-    msg[idx++] = 0x03;
-    msg[idx++] = (uint8_t)(3 + tlen + plen);
-    msg[idx++] = 0xD4; msg[idx++] = tlen; msg[idx++] = plen;
-    memcpy(msg+idx, tname, tlen); idx += tlen;
-    memcpy(msg+idx, json,  plen); idx += plen;
-    msg[idx++] = 0xFE;
-
-    for (uint8_t pg = 0; pg < (idx+3)/4; pg++) {
-        uint8_t pd[4] = {};
-        for (int j = 0; j < 4 && pg*4+j < idx; j++) pd[j] = msg[pg*4+j];
-        uint8_t wr[] = {
-            0x00,0x00,0xFF,0x07,0xF9,
-            0xD4,0x40,0x01,0xA2,(uint8_t)(4+pg),
-            pd[0],pd[1],pd[2],pd[3],
-            (uint8_t)((0x100-(0xD4+0x40+0x01+0xA2+(4+pg)+pd[0]+pd[1]+pd[2]+pd[3])) & 0xFF),0x00
-        };
-        i2c_master_write_to_device(I2C_PORT, PN532_ADDR, wr, sizeof(wr), pdMS_TO_TICKS(50));
-        vTaskDelay(pdMS_TO_TICKS(5));
+    uint8_t ndef[180] = {};
+    size_t ndef_len = 0;
+    if (!build_external_ndef("solvare:sign_response", json, ndef, sizeof(ndef), &ndef_len)) {
+        return false;
     }
+
+    if (type4_write_ndef(ndef, ndef_len)) {
+        ESP_LOGI(TAG, "sign_response written via Type 4");
+        return true;
+    }
+    if (!write_legacy_ntag_ndef(ndef, ndef_len)) return false;
     ESP_LOGI(TAG, "sign_response written");
     return true;
 }
@@ -279,38 +564,22 @@ bool hal_nfc_write_wallet_ndef(const uint8_t pubkey[32])
 {
     if (!s_ready) return false;
 
-    char pub_hex[65] = {};
-    for (int i = 0; i < 32; i++) snprintf(pub_hex+i*2, 3, "%02X", pubkey[i]);
+    char pub_b58[48] = {};
+    if (!base58_encode(pubkey, 32, pub_b58, sizeof(pub_b58))) {
+        return false;
+    }
 
     char json[128];
     int jlen = snprintf(json, sizeof(json),
-                        "{\"version\":1,\"pubkey\":\"%s\",\"network\":\"mainnet\"}", pub_hex);
-    if (jlen <= 0) return false;
+                        "{\"version\":1,\"pubkey\":\"%s\",\"network\":\"devnet\"}", pub_b58);
+    if (jlen <= 0 || jlen >= (int)sizeof(json)) return false;
 
-    const char *tname = "solvare:wallet";
-    uint8_t tlen = (uint8_t)strlen(tname);
-    uint8_t plen = (uint8_t)jlen;
-
-    uint8_t msg[200] = {};
-    uint8_t idx = 0;
-    msg[idx++] = 0x03;
-    msg[idx++] = (uint8_t)(3 + tlen + plen);
-    msg[idx++] = 0xD4; msg[idx++] = tlen; msg[idx++] = plen;
-    memcpy(msg+idx, tname, tlen); idx += tlen;
-    memcpy(msg+idx, json,  plen); idx += plen;
-    msg[idx++] = 0xFE;
-
-    for (uint8_t pg = 0; pg < (idx+3)/4; pg++) {
-        uint8_t pd[4] = {};
-        for (int j = 0; j < 4 && pg*4+j < idx; j++) pd[j] = msg[pg*4+j];
-        uint8_t wr[] = {
-            0x00,0x00,0xFF,0x07,0xF9,
-            0xD4,0x40,0x01,0xA2,(uint8_t)(4+pg),
-            pd[0],pd[1],pd[2],pd[3],
-            (uint8_t)((0x100-(0xD4+0x40+0x01+0xA2+(4+pg)+pd[0]+pd[1]+pd[2]+pd[3])) & 0xFF),0x00
-        };
-        i2c_master_write_to_device(I2C_PORT, PN532_ADDR, wr, sizeof(wr), pdMS_TO_TICKS(50));
-        vTaskDelay(pdMS_TO_TICKS(5));
+    uint8_t ndef[180] = {};
+    size_t ndef_len = 0;
+    if (!build_external_ndef("solvare:wallet", json, ndef, sizeof(ndef), &ndef_len)) {
+        return false;
     }
-    return true;
+
+    if (type4_write_ndef(ndef, ndef_len)) return true;
+    return write_legacy_ntag_ndef(ndef, ndef_len);
 }

@@ -16,7 +16,7 @@ wallet storage.
 
 ## Features
 
-- Watchface, settings, transaction, stats, and charging screens
+- Watchface, settings, transaction, stats, and battery status UI
 - Local onboarding flow for wallet creation or import
 - Passphrase-protected encrypted wallet seed storage
 - NFC pairing/signing interaction surface for the SolWear mobile app
