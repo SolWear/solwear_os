@@ -948,21 +948,9 @@ void app_main(void)
                 if(tet_fits(tet.px,tet.py+1,tet.rot))tet.py++; else tet_place();}}
         if(s_screen==SCR_PING_PONG) pp_update(dt);
 
-        // NFC poll: on tag tap, try to process NDEF (sign request) OR
-        // write wallet NDEF so Android can read pubkey
+        // NFC MVP: emulate a Type 4 wallet tag so Android reads the watch directly.
         if(s_nfc_armed&&hal_nfc_is_ready()){
-            nfc_tag_t tag;
-            if(hal_nfc_wait_tag(50,&tag)){
-                if(s_pending_sig_valid&&hal_nfc_write_sign_response(s_pending_sig,NULL)){
-                    memset(s_pending_sig,0,sizeof(s_pending_sig));
-                    s_pending_sig_valid=false;
-                    continue;
-                }
-                if(!hal_nfc_process_ndef()){
-                    // No sign_request on tag — write our wallet pubkey for Android to read
-                    hal_nfc_write_wallet_ndef(wallet_pubkey());
-                }
-            }
+            hal_nfc_serve_wallet_tag(wallet_pubkey(), 60);
         }
 
         // Buttons

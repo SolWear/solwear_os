@@ -44,6 +44,9 @@ bool hal_nfc_write_sign_response(const uint8_t sig[64], const char *nonce);
 // Write solvare:wallet NDEF so Android app can read device pubkey
 bool hal_nfc_write_wallet_ndef(const uint8_t pubkey[32]);
 
+// Emulate a Type 4 NFC tag containing the wallet NDEF for phone reader mode.
+bool hal_nfc_serve_wallet_tag(const uint8_t pubkey[32], uint16_t timeout_ms);
+
 // Global payloads
 extern nfc_tx_payload_t g_nfc_tx;
 extern nfc_key_import_t g_nfc_key_import;

@@ -22,6 +22,8 @@ static const char kB64[] =
 static const char kB58[] =
     "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
+static bool parse_ndef(const uint8_t *data, size_t len);
+
 static bool base58_encode(const uint8_t *in, size_t in_len, char *out, size_t out_max)
 {
     if (!out || out_max == 0) return false;
@@ -283,6 +285,231 @@ static bool build_external_ndef(const char *type, const char *payload,
     idx += plen;
     if (out_len) *out_len = idx;
     return true;
+}
+
+static bool build_wallet_ndef_file(const uint8_t pubkey[32], uint8_t *out,
+                                   size_t out_max, size_t *out_len)
+{
+    char pub_b58[48] = {};
+    if (!base58_encode(pubkey, 32, pub_b58, sizeof(pub_b58))) {
+        return false;
+    }
+
+    char json[128];
+    int jlen = snprintf(json, sizeof(json),
+                        "{\"version\":1,\"pubkey\":\"%s\",\"network\":\"devnet\"}", pub_b58);
+    if (jlen <= 0 || jlen >= (int)sizeof(json)) return false;
+
+    uint8_t ndef[180] = {};
+    size_t ndef_len = 0;
+    if (!build_external_ndef("solwear:wallet", json, ndef, sizeof(ndef), &ndef_len)) {
+        return false;
+    }
+    if (!out || ndef_len + 2 > out_max) return false;
+
+    out[0] = (uint8_t)(ndef_len >> 8);
+    out[1] = (uint8_t)ndef_len;
+    memcpy(out + 2, ndef, ndef_len);
+    if (out_len) *out_len = ndef_len + 2;
+    return true;
+}
+
+static bool pn532_tg_init_as_type4_target(uint16_t timeout_ms)
+{
+    static const uint8_t cmd[] = {
+        0x8C,
+        0x00,
+        0x04, 0x00,
+        0x12, 0x34, 0x56,
+        0x20,
+        0x01, 0xFE, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+        0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7,
+        0xFF, 0xFF,
+        0xAA, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11,
+        0x00,
+        0x00
+    };
+    uint8_t out[8] = {};
+    size_t out_len = 0;
+    return pn532_cmd(cmd, sizeof(cmd), 0x8D, out, sizeof(out), &out_len, timeout_ms);
+}
+
+static bool pn532_tg_get_data(uint8_t *apdu, size_t apdu_max, size_t *apdu_len,
+                              uint16_t timeout_ms)
+{
+    const uint8_t cmd[] = {0x86};
+    uint8_t out[270] = {};
+    size_t out_len = 0;
+    if (!pn532_cmd(cmd, sizeof(cmd), 0x87, out, sizeof(out), &out_len, timeout_ms)) {
+        return false;
+    }
+    if (out_len < 1 || out[0] != 0x00) return false;
+
+    size_t len = out_len - 1;
+    if (len > apdu_max) len = apdu_max;
+    if (apdu && len > 0) memcpy(apdu, out + 1, len);
+    if (apdu_len) *apdu_len = len;
+    return len > 0;
+}
+
+static bool pn532_tg_set_data(const uint8_t *resp, size_t resp_len)
+{
+    if (!resp || resp_len > 262) return false;
+    uint8_t cmd[263] = {};
+    uint8_t out[4] = {};
+    size_t out_len = 0;
+    cmd[0] = 0x8E;
+    memcpy(cmd + 1, resp, resp_len);
+    if (!pn532_cmd(cmd, resp_len + 1, 0x8F, out, sizeof(out), &out_len, 120)) {
+        return false;
+    }
+    return out_len >= 1 && out[0] == 0x00;
+}
+
+static bool apdu_status(uint8_t *out, size_t out_max, size_t *out_len,
+                        uint8_t sw1, uint8_t sw2)
+{
+    if (!out || out_max < 2) return false;
+    out[0] = sw1;
+    out[1] = sw2;
+    if (out_len) *out_len = 2;
+    return true;
+}
+
+static bool apdu_with_data(const uint8_t *data, size_t data_len,
+                           uint8_t *out, size_t out_max, size_t *out_len)
+{
+    if (!out || data_len + 2 > out_max) return false;
+    if (data_len > 0 && data) memcpy(out, data, data_len);
+    out[data_len] = 0x90;
+    out[data_len + 1] = 0x00;
+    if (out_len) *out_len = data_len + 2;
+    return true;
+}
+
+static bool is_select_ndef_app(const uint8_t *apdu, size_t len)
+{
+    static const uint8_t aid[] = {
+        0xD2,0x76,0x00,0x00,0x85,0x01,0x01
+    };
+    return len >= 12 &&
+        apdu[1] == 0xA4 &&
+        apdu[2] == 0x04 &&
+        apdu[4] == sizeof(aid) &&
+        memcmp(apdu + 5, aid, sizeof(aid)) == 0;
+}
+
+static bool target_handle_apdu(const uint8_t *apdu, size_t apdu_len,
+                               const uint8_t *cc_file, size_t cc_len,
+                               uint8_t *ndef_file, size_t ndef_cap,
+                               size_t *ndef_len, uint16_t *selected_file,
+                               uint8_t *out, size_t out_max, size_t *out_len)
+{
+    if (!apdu || apdu_len < 4) {
+        return apdu_status(out, out_max, out_len, 0x6F, 0x00);
+    }
+
+    uint8_t ins = apdu[1];
+    uint8_t p1 = apdu[2];
+    uint8_t p2 = apdu[3];
+
+    if (ins == 0xA4 && is_select_ndef_app(apdu, apdu_len)) {
+        *selected_file = 0;
+        return apdu_status(out, out_max, out_len, 0x90, 0x00);
+    }
+
+    if (ins == 0xA4 && p1 == 0x00 && apdu_len >= 7 && apdu[4] == 0x02) {
+        uint16_t file_id = ((uint16_t)apdu[5] << 8) | apdu[6];
+        if (file_id == 0xE103 || file_id == 0xE104) {
+            *selected_file = file_id;
+            return apdu_status(out, out_max, out_len, 0x90, 0x00);
+        }
+        return apdu_status(out, out_max, out_len, 0x6A, 0x82);
+    }
+
+    if (ins == 0xB0) {
+        const uint8_t *file = NULL;
+        size_t file_len = 0;
+        if (*selected_file == 0xE103) {
+            file = cc_file;
+            file_len = cc_len;
+        } else if (*selected_file == 0xE104) {
+            file = ndef_file;
+            file_len = *ndef_len;
+        } else {
+            return apdu_status(out, out_max, out_len, 0x6A, 0x82);
+        }
+
+        uint16_t offset = ((uint16_t)p1 << 8) | p2;
+        size_t le = (apdu_len >= 5 && apdu[4] != 0) ? apdu[4] : 256;
+        if (offset > file_len) return apdu_status(out, out_max, out_len, 0x6B, 0x00);
+        size_t available = file_len - offset;
+        size_t send_len = available < le ? available : le;
+        return apdu_with_data(file + offset, send_len, out, out_max, out_len);
+    }
+
+    if (ins == 0xD6 && *selected_file == 0xE104 && apdu_len >= 5) {
+        uint16_t offset = ((uint16_t)p1 << 8) | p2;
+        size_t lc = apdu[4];
+        if (apdu_len < 5 + lc || offset + lc > ndef_cap) {
+            return apdu_status(out, out_max, out_len, 0x6B, 0x00);
+        }
+        memcpy(ndef_file + offset, apdu + 5, lc);
+        if (offset + lc > *ndef_len) *ndef_len = offset + lc;
+        if (*ndef_len >= 2) {
+            uint16_t body_len = ((uint16_t)ndef_file[0] << 8) | ndef_file[1];
+            if (body_len > 0 && body_len + 2 <= *ndef_len) {
+                parse_ndef(ndef_file + 2, body_len);
+            }
+        }
+        return apdu_status(out, out_max, out_len, 0x90, 0x00);
+    }
+
+    return apdu_status(out, out_max, out_len, 0x6D, 0x00);
+}
+
+bool hal_nfc_serve_wallet_tag(const uint8_t pubkey[32], uint16_t timeout_ms)
+{
+    if (!s_ready || !pubkey) return false;
+
+    static const uint8_t cc_file[] = {
+        0x00,0x0F,0x20,0x00,0xF6,0x00,0xF6,0x04,0x06,
+        0xE1,0x04,0x04,0x00,0x00,0x00
+    };
+    uint8_t ndef_file[512] = {};
+    size_t ndef_len = 0;
+    if (!build_wallet_ndef_file(pubkey, ndef_file, sizeof(ndef_file), &ndef_len)) {
+        return false;
+    }
+
+    if (!pn532_tg_init_as_type4_target(timeout_ms)) {
+        return false;
+    }
+
+    uint16_t selected_file = 0;
+    bool exchanged = false;
+    for (int i = 0; i < 16; i++) {
+        uint8_t apdu[260] = {};
+        size_t apdu_len = 0;
+        if (!pn532_tg_get_data(apdu, sizeof(apdu), &apdu_len, 250)) {
+            break;
+        }
+
+        uint8_t resp[270] = {};
+        size_t resp_len = 0;
+        if (!target_handle_apdu(apdu, apdu_len, cc_file, sizeof(cc_file),
+                                ndef_file, sizeof(ndef_file), &ndef_len,
+                                &selected_file, resp, sizeof(resp), &resp_len)) {
+            break;
+        }
+        if (!pn532_tg_set_data(resp, resp_len)) {
+            break;
+        }
+        exchanged = true;
+    }
+
+    if (exchanged) ESP_LOGI(TAG, "wallet tag served");
+    return exchanged;
 }
 
 static bool write_legacy_ntag_ndef(const uint8_t *ndef, size_t ndef_len)
@@ -570,21 +797,14 @@ bool hal_nfc_write_wallet_ndef(const uint8_t pubkey[32])
 {
     if (!s_ready) return false;
 
-    char pub_b58[48] = {};
-    if (!base58_encode(pubkey, 32, pub_b58, sizeof(pub_b58))) {
+    uint8_t ndef_file[220] = {};
+    size_t ndef_file_len = 0;
+    if (!build_wallet_ndef_file(pubkey, ndef_file, sizeof(ndef_file), &ndef_file_len) ||
+        ndef_file_len < 2) {
         return false;
     }
-
-    char json[128];
-    int jlen = snprintf(json, sizeof(json),
-                        "{\"version\":1,\"pubkey\":\"%s\",\"network\":\"devnet\"}", pub_b58);
-    if (jlen <= 0 || jlen >= (int)sizeof(json)) return false;
-
-    uint8_t ndef[180] = {};
-    size_t ndef_len = 0;
-    if (!build_external_ndef("solwear:wallet", json, ndef, sizeof(ndef), &ndef_len)) {
-        return false;
-    }
+    const uint8_t *ndef = ndef_file + 2;
+    size_t ndef_len = ndef_file_len - 2;
 
     if (type4_write_ndef(ndef, ndef_len)) return true;
     return write_legacy_ntag_ndef(ndef, ndef_len);
