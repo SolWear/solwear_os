@@ -1045,7 +1045,7 @@ void app_main(void)
                 memset(s_pending_sig,0,sizeof(s_pending_sig));
                 s_pending_sig_valid=false;
             }
-            hal_nfc_emulate_wallet_target(wallet_pubkey(),55);
+            hal_nfc_emulate_wallet_target(wallet_pubkey(),350);
         }
 
         // Buttons
