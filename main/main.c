@@ -31,6 +31,7 @@ typedef enum {
     SCR_ONBOARD,
     SCR_LOCK,
     SCR_HOME,
+    SCR_WALLET,
     SCR_SETTINGS,
     SCR_TRANSACTIONS,
     SCR_STATS,
@@ -48,11 +49,14 @@ typedef enum { SLIDE_WATCHFACE=0, SLIDE_GRID, SLIDE_COUNT } home_slide_t;
 static screen_id_t  s_screen   = SCR_ONBOARD;
 static home_slide_t s_slide    = SLIDE_WATCHFACE;
 static int8_t       s_grid_sel = 0;   // 0..3 in 2x2 grid
-static uint8_t      s_watchface = 0;  // 0=digital 1=analog 2=minimal
+#define WATCHFACE_COUNT 4
+static uint8_t      s_watchface = 0;  // 0=digital 1=analog 2=minimal 3=wallet
 
 static bool     s_nfc_armed        = true;
 static uint32_t s_nfc_widget_ms    = 0;
 static bool     s_nfc_widget_armed = true;
+static uint32_t s_sync_widget_ms   = 0;
+static uint32_t s_sync_seen_counter = 0;
 
 // TX overlay
 static bool     s_tx_overlay  = false;
@@ -101,10 +105,10 @@ static uint8_t hex_nibble(char c)
 // ============================================================
 static int8_t s_settings_sel = 0;
 static const char *s_settings_items[] = {
-    "Watchface: Digital","Watchface: Analog","Watchface: Minimal",
+    "Watchface: Digital","Watchface: Analog","Watchface: Minimal","Watchface: Wallet",
     "Change Password","About"
 };
-#define SETTINGS_COUNT 5
+#define SETTINGS_COUNT 6
 
 // ============================================================
 // Transactions
@@ -331,10 +335,18 @@ static void render_watchface(void)
             st7789_fb_vline(cx+(int)(60*sinf(ma)),cy-(int)(60*cosf(ma)),(int)(60*fabsf(cosf(ma))),COLOR_SOL_GRN);
         }
         st7789_fb_circle_fill(cx,cy,4,COLOR_SOL_PUR);
-    } else {
+    } else if(s_watchface==2) {
         ui_str_center(80,"SolWear",COLOR_SOL_PUR,3);
         int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,112,t,COLOR_SOL_GRN,3);
         const char*nm=wallet_name(); if(nm&&nm[0]) ui_str_center(158,nm,COLOR_GRAY,1);
+    } else {
+        ui_str_center(50,"Wallet",COLOR_SOL_PUR,2);
+        char bal[28]; snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
+        int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,82,bal,COLOR_SOL_GRN,3);
+        const uint8_t *pk=wallet_pubkey();
+        char p4[20]; snprintf(p4,sizeof(p4),"%02X%02X %02X%02X ...",pk[0],pk[1],pk[2],pk[3]);
+        ui_str_center(132,p4,COLOR_WHITE,2);
+        ui_str_center(162,s_nfc_armed?"NFC sync armed":"NFC sync off",s_nfc_armed?COLOR_CYAN:COLOR_RED,1);
     }
     ui_nfc_icon(LCD_W-18,STATUS_BAR_H+4,s_nfc_armed);
 }
@@ -342,10 +354,10 @@ static void render_watchface(void)
 static void render_home_grid(void)
 {
     st7789_fb_rect(0,STATUS_BAR_H,LCD_W,LCD_H-STATUS_BAR_H,COLOR_BLACK);
-    const int IW=108,IH=90,GAP=8;
-    int x0=(LCD_W-2*IW-GAP)/2, y0=STATUS_BAR_H+12;
-    const char *lbl[4]={"Settings","Txns","Stats","Games"};
-    for(int i=0;i<4;i++){
+    const int IW=108,IH=58,GAP=8;
+    int x0=(LCD_W-2*IW-GAP)/2, y0=STATUS_BAR_H+8;
+    const char *lbl[6]={"Wallet","Txns","Stats","Settings","Games","Lock"};
+    for(int i=0;i<6;i++){
         int col=i%2,row=i/2;
         draw_icon_card(x0+col*(IW+GAP),y0+row*(IH+GAP),IW,IH,lbl[i],s_grid_sel==i);
     }
@@ -481,6 +493,56 @@ static void render_transactions(void)
     }
     char pg[12]; snprintf(pg,sizeof(pg),"%d/%d",s_rx_scroll+1,(int)s_rx_n);
     ui_str_center(LCD_H-12,pg,COLOR_GRAY,1);
+}
+
+static void render_wallet_app(void)
+{
+    st7789_fb_fill(COLOR_BLACK); draw_status("Wallet");
+    const uint8_t *pk=wallet_pubkey();
+    char p1[32], p2[32], bal[32];
+    snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
+    snprintf(p1,sizeof(p1),"%02X%02X%02X%02X %02X%02X%02X%02X",pk[0],pk[1],pk[2],pk[3],pk[4],pk[5],pk[6],pk[7]);
+    snprintf(p2,sizeof(p2),"%02X%02X%02X%02X %02X%02X%02X%02X",pk[24],pk[25],pk[26],pk[27],pk[28],pk[29],pk[30],pk[31]);
+
+    ui_rounded_rect(10,34,220,62,8,COLOR_DARKBG);
+    ui_str_center(46,"Balance",COLOR_GRAY,1);
+    int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,60,bal,COLOR_SOL_GRN,3);
+
+    ui_rounded_rect(10,106,220,58,8,COLOR_DARKBG);
+    ui_str(18,116,"Pubkey",COLOR_GRAY,1);
+    ui_str(18,134,p1,COLOR_WHITE,1);
+    ui_str(18,148,p2,COLOR_WHITE,1);
+
+    uint16_t c=s_nfc_armed?COLOR_CYAN:COLOR_RED;
+    ui_rounded_rect(10,176,220,34,8,COLOR_DARKBG);
+    ui_str(18,188,"Signing:",COLOR_GRAY,1);
+    ui_str(82,188,"NFC / USB only",c,1);
+    ui_str_center(224,"K4=back",COLOR_GRAY,1);
+}
+
+static void render_sync_effect(void)
+{
+    if(s_sync_widget_ms==0) return;
+    int pulse=(s_anim/45)%28;
+    uint16_t ring=(g_nfc_sync.event==NFC_SYNC_ERROR)?COLOR_RED:
+                  (g_nfc_sync.event==NFC_SYNC_SIGN_RESPONSE)?COLOR_SOL_GRN:
+                  (g_nfc_sync.event==NFC_SYNC_SIGN_REQUEST)?COLOR_ORANGE:COLOR_CYAN;
+    ui_rounded_rect(18,52,204,126,10,COLOR_DARKBG);
+    ui_rounded_rect_outline(18,52,204,126,10,ring);
+
+    int wx=72, px=168, cy=104;
+    st7789_fb_rect(wx-16,cy-24,32,48,COLOR_SOL_PUR);
+    st7789_fb_rect(px-18,cy-28,36,56,COLOR_GRAY);
+    st7789_fb_rect(px-14,cy-22,28,44,COLOR_BLACK);
+    for(int r=10;r<46;r+=12){
+        st7789_fb_circle(120,cy,r+pulse/3,ring);
+    }
+    st7789_fb_circle_fill(wx,cy,4,COLOR_WHITE);
+    st7789_fb_circle_fill(px,cy,4,COLOR_WHITE);
+
+    const char *msg = g_nfc_sync.message[0] ? g_nfc_sync.message : "NFC sync";
+    ui_str_center(148,msg,COLOR_WHITE,1);
+    ui_str_center(162,"watch <-> phone",COLOR_GRAY,1);
 }
 
 static void render_stats(void)
@@ -769,7 +831,7 @@ static void handle_tx(btn_event_t ev)
             uint8_t sig[64]={};
             if(wallet_is_unlocked()){
                 wallet_sign(g_nfc_tx.tx_bytes,g_nfc_tx.tx_len,sig);
-                if(!hal_nfc_write_sign_response(sig,g_nfc_tx.nonce)){
+                if(!hal_nfc_set_sign_response_target(sig,g_nfc_tx.nonce)){
                     memcpy(s_pending_sig,sig,sizeof(s_pending_sig));
                     s_pending_sig_valid=true;
                 }
@@ -796,13 +858,15 @@ static void handle_button(btn_event_t ev)
         case SCR_ONBOARD: handle_ob(ev); break;
         case SCR_LOCK:    handle_lock(ev); break;
         case SCR_HOME:
-            if(ev==BTN_K2_PRESS){ if(s_slide==SLIDE_WATCHFACE){s_slide=SLIDE_GRID;s_grid_sel=0;} else if(s_grid_sel<3) s_grid_sel++; }
-            if(ev==BTN_K1_PRESS){ if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+2)%3; else if(s_grid_sel>0) s_grid_sel--; else s_slide=SLIDE_WATCHFACE; }
+            if(ev==BTN_K2_PRESS){ if(s_slide==SLIDE_WATCHFACE){s_slide=SLIDE_GRID;s_grid_sel=0;} else if(s_grid_sel<5) s_grid_sel++; }
+            if(ev==BTN_K1_PRESS){ if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+WATCHFACE_COUNT-1)%WATCHFACE_COUNT; else if(s_grid_sel>0) s_grid_sel--; else s_slide=SLIDE_WATCHFACE; }
             if(ev==BTN_K3_PRESS){
-                if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+1)%3;
+                if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+1)%WATCHFACE_COUNT;
                 else {
-                    const screen_id_t t[]={SCR_SETTINGS,SCR_TRANSACTIONS,SCR_STATS,SCR_GAMES_MENU};
+                    const screen_id_t t[]={SCR_WALLET,SCR_TRANSACTIONS,SCR_STATS,SCR_SETTINGS,SCR_GAMES_MENU,SCR_LOCK};
                     s_screen=t[s_grid_sel];
+                    if(s_screen==SCR_LOCK){ wallet_lock(); roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); }
+                    if(s_screen==SCR_WALLET) load_receipts();
                     if(s_screen==SCR_TRANSACTIONS) load_receipts();
                     if(s_screen==SCR_GAMES_MENU) s_games_sel=0;
                 }
@@ -812,7 +876,10 @@ static void handle_button(btn_event_t ev)
         case SCR_SETTINGS:
             if(ev==BTN_K1_PRESS&&s_settings_sel>0) s_settings_sel--;
             if(ev==BTN_K2_PRESS&&s_settings_sel<SETTINGS_COUNT-1) s_settings_sel++;
-            if(ev==BTN_K3_PRESS&&s_settings_sel<3) s_watchface=(uint8_t)s_settings_sel;
+            if(ev==BTN_K3_PRESS&&s_settings_sel<WATCHFACE_COUNT) s_watchface=(uint8_t)s_settings_sel;
+            if(ev==BTN_K4_PRESS) s_screen=SCR_HOME;
+            break;
+        case SCR_WALLET:
             if(ev==BTN_K4_PRESS) s_screen=SCR_HOME;
             break;
         case SCR_TRANSACTIONS:
@@ -899,6 +966,7 @@ void app_main(void)
         ESP_LOGW(TAG, "NFC init will retry in background");
     }
     wallet_load_public();
+    load_receipts();
 
     if(!wallet_is_onboarded()){ s_screen=SCR_ONBOARD; s_ob=OB_WELCOME; }
     else { roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); s_screen=SCR_LOCK; }
@@ -915,6 +983,11 @@ void app_main(void)
         // Timers
         s_anim+=dt;
         if(s_nfc_widget_ms>dt) s_nfc_widget_ms-=dt; else s_nfc_widget_ms=0;
+        if(s_sync_widget_ms>dt) s_sync_widget_ms-=dt; else s_sync_widget_ms=0;
+        if(g_nfc_sync.counter!=s_sync_seen_counter){
+            s_sync_seen_counter=g_nfc_sync.counter;
+            s_sync_widget_ms=2400;
+        }
         tama_anim+=dt; if(tama_anim>=500){tama_anim=0;tama_frame^=1;}
         if(tama_msg_on){tama_msg_t+=dt; if(tama_msg_t>=1500)tama_msg_on=false;}
 
@@ -948,9 +1021,31 @@ void app_main(void)
                 if(tet_fits(tet.px,tet.py+1,tet.rot))tet.py++; else tet_place();}}
         if(s_screen==SCR_PING_PONG) pp_update(dt);
 
-        // NFC MVP: emulate a Type 4 wallet tag so Android reads the watch directly.
+        // Legacy reader fallback: disabled while the watch acts as the Type 4 tag.
+#if 0
+        // NFC poll: on tag tap, try to process NDEF (sign request) OR
+        // write wallet NDEF so Android can read pubkey
         if(s_nfc_armed&&hal_nfc_is_ready()){
-            hal_nfc_serve_wallet_tag(wallet_pubkey(), 60);
+            nfc_tag_t tag;
+            if(hal_nfc_wait_tag(50,&tag)){
+                if(s_pending_sig_valid&&hal_nfc_write_sign_response(s_pending_sig,NULL)){
+                    memset(s_pending_sig,0,sizeof(s_pending_sig));
+                    s_pending_sig_valid=false;
+                    continue;
+                }
+                if(!hal_nfc_process_ndef()){
+                    // No sign_request on tag — write our wallet pubkey for Android to read
+                    hal_nfc_write_wallet_ndef(wallet_pubkey());
+                }
+            }
+        }
+#endif
+        if(s_nfc_armed&&hal_nfc_is_ready()){
+            if(s_pending_sig_valid&&hal_nfc_set_sign_response_target(s_pending_sig,NULL)){
+                memset(s_pending_sig,0,sizeof(s_pending_sig));
+                s_pending_sig_valid=false;
+            }
+            hal_nfc_emulate_wallet_target(wallet_pubkey(),55);
         }
 
         // Buttons
@@ -960,6 +1055,7 @@ void app_main(void)
         // Render
         switch(s_screen){
             case SCR_HOME:         render_home();         break;
+            case SCR_WALLET:       render_wallet_app();   break;
             case SCR_ONBOARD:      render_onboard();      break;
             case SCR_LOCK:         render_lock();         break;
             case SCR_SETTINGS:     render_settings();     break;
@@ -972,6 +1068,7 @@ void app_main(void)
         }
         if(s_tx_overlay) render_tx_overlay();
         if(s_nfc_widget_ms>0) ui_nfc_widget(s_nfc_widget_armed);
+        render_sync_effect();
 
         st7789_flush();
 
