@@ -298,7 +298,7 @@ static void on_button(btn_event_t ev){ xQueueSend(s_btn_q, &ev, 0); }
 #define PBL_DIM     RGB565(0x7B,0x7B,0x7B)
 #define PBL_LINE    RGB565(0x3A,0x3A,0x3A)
 #define PBL_PANEL   RGB565(0x10,0x10,0x10)
-#define SOLWEAR_OS_VERSION "SolWearOS v1.3-pv2"
+#define SOLWEAR_OS_VERSION "SolWearOS v1.4-pv2"
 #define UI_TRANSITION_MS 140
 
 static uint32_t s_ui_transition_ms=0;
@@ -614,12 +614,12 @@ static void render_watchface(void)
         draw_meter(30,210,180,5,bat,PBL_FG);
     } else if(s_watchface==1){
         draw_night_sky();
-        ui_str_center(42,"GOOD NIGHT",PBL_DIM,1);
-        draw_moon_scene(67,74);
-        ui_str(118,64,"GN",PBL_FG,4);
-        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,134,t,PBL_FG,3);
-        ui_str_center(180,"HOLD K4 LOCKS",PBL_DIM,1);
-        draw_meter(54,196,132,7,bat,PBL_FG);
+        ui_str_center(26,"GOOD NIGHT",PBL_DIM,1);
+        draw_moon_scene(LCD_W/2,95);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,152,t,PBL_FG,3);
+        ui_str(LCD_W/2+tw/2+2,162,sec,PBL_DIM,2);
+        ui_str_center(196,"HOLD K4 TO LOCK",PBL_DIM,1);
+        draw_meter(54,212,132,5,bat,PBL_FG);
     } else if(s_watchface==2){
         ui_str_center(40,"SOLWEAR",PBL_DIM,1);
         int tw=ui_str_width(t,4); ui_str(LCD_W/2-tw/2,78,t,PBL_FG,4);
@@ -646,20 +646,32 @@ static void render_watchface(void)
         st7789_fb_circle_fill(cx,cy,4,PBL_FG);
         ui_str_center(184,t,PBL_DIM,1);
     } else if(s_watchface==4) {
-        ui_str_center(38,"WALLET",PBL_DIM,1);
-        char bal[28]; snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
-        int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,72,bal,PBL_FG,3);
-        st7789_fb_rect_outline(34,124,172,42,PBL_LINE);
-        ui_str_center(134,short_pk,PBL_FG,1);
-        ui_str_center(150,s_nfc_armed?"PHONE READS TAG":"NFC OFF",PBL_DIM,1);
-        ui_str_center(190,"K3 CYCLES FACE",PBL_DIM,1);
+        char bal[24]; snprintf(bal,sizeof(bal),"%.4f",(double)s_balance);
+        ui_str_center(30,"SOL BALANCE",PBL_DIM,1);
+        int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,44,bal,PBL_FG,3);
+        st7789_fb_hline(20,82,200,PBL_LINE);
+        ui_str_center(94,"WALLET",PBL_DIM,1);
+        ui_str_center(108,short_pk,PBL_FG,1);
+        st7789_fb_hline(20,122,200,PBL_LINE);
+        if(s_nfc_armed){
+            int phase=(s_anim/280)%3;
+            for(int i=0;i<3;i++){
+                int bh=5+i*4;
+                uint16_t c2=(i==phase)?PBL_FG:PBL_LINE;
+                st7789_fb_rect(LCD_W/2-16+i*14,142-bh,10,bh,c2);
+            }
+            ui_str_center(154,"PHONE READS TAG",PBL_FG,1);
+        } else {
+            ui_str_center(138,"NFC OFF",PBL_DIM,2);
+        }
+        ui_str_center(198,"K3 CYCLES FACE",PBL_DIM,1);
     } else {
-        st7789_fb_rect(34,48,172,40,PBL_FG);
-        ui_str_center(60,"SOLWEAR",PBL_BG,2);
-        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,108,t,PBL_FG,3);
-        ui_str_center(150,"TINY TRUSTED SIGNER",PBL_DIM,1);
-        st7789_fb_hline(54,176,132,PBL_LINE);
-        ui_str_center(188,s_nfc_armed?"READY":"OFFLINE",PBL_FG,1);
+        for(int i=0;i<3;i++) ui_rounded_rect(LCD_W/2-26+i*22,50,16,36,5,PBL_FG);
+        ui_str_center(98,"SOLWEAR",PBL_DIM,1);
+        int tw=ui_str_width(t,4); ui_str(LCD_W/2-tw/2,112,t,PBL_FG,4);
+        st7789_fb_hline(20,148,200,PBL_LINE);
+        ui_str_center(160,"TRUSTED SIGNER",PBL_DIM,1);
+        ui_str_center(178,s_nfc_armed?"NFC READY":"NFC OFF",s_nfc_armed?PBL_FG:PBL_DIM,1);
     }
     ui_nfc_icon(LCD_W-18,STATUS_BAR_H+4,s_nfc_armed);
 }
@@ -702,17 +714,16 @@ static void render_home(void)
 static void render_ob_choice(const char *title, const char *a, const char *b)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
-    ui_str_center(30,title,PBL_FG,2);
+    ui_str_center(32,title,PBL_FG,2);
     for(int i=0;i<2;i++){
-        int y=80+i*80;
-        uint16_t bg=(s_ob_sel==i)?PBL_FG:PBL_BG;
+        int y=80+i*82;
         uint16_t fg=(s_ob_sel==i)?PBL_BG:PBL_FG;
-        st7789_fb_rect(20,y,200,60,bg);
-        st7789_fb_rect_outline(20,y,200,60,(s_ob_sel==i)?PBL_FG:PBL_LINE);
+        if(s_ob_sel==i) ui_rounded_rect(20,y,200,62,8,PBL_FG);
+        else            ui_rounded_rect_outline(20,y,200,62,8,PBL_LINE);
         const char*l=(i==0)?a:b; int tw=ui_str_width(l,2);
-        ui_str(120-tw/2,y+22,l,fg,2);
+        ui_str(120-tw/2,y+23,l,fg,2);
     }
-    ui_str_center(220,"K1/K2 choose  K3 confirm",PBL_DIM,1);
+    ui_str_center(224,"K1/K2 choose  K3 confirm",PBL_DIM,1);
 }
 
 static void render_onboard(void)
@@ -749,12 +760,14 @@ static void render_onboard(void)
             roulette_render(&s_roulette);
             break;
         case OB_GEN_CONFIRM:
-            ui_str_center(40,"Key Ready",PBL_FG,2);
-            st7789_fb_rect_outline(16,70,208,28,PBL_LINE);
-            ui_str_center(79,s_ob_pub4,PBL_FG,2);
-            ui_str_center(110,"first 4 bytes shown",PBL_DIM,1);
-            ui_str_center(155,"K3 = set password",PBL_FG,2);
-            ui_str_center(178,"K4 = restart",PBL_DIM,1);
+            for(int i=0;i<3;i++) ui_rounded_rect(LCD_W/2-26+i*22,34,16,36,5,PBL_FG);
+            ui_str_center(84,"KEY READY",PBL_FG,2);
+            ui_rounded_rect_outline(20,104,200,28,4,PBL_LINE);
+            ui_str_center(114,s_ob_pub4,PBL_FG,2);
+            ui_str_center(140,"first 4 bytes",PBL_DIM,1);
+            ui_rounded_rect(20,158,200,36,6,PBL_FG);
+            {int k3w=ui_str_width("K3  set password",1); ui_str(120-k3w/2,170,"K3  set password",PBL_BG,1);}
+            ui_str_center(208,"K4 restart",PBL_DIM,1);
             break;
         case OB_SET_PASS:
             ui_str_center(30,"Set Password",PBL_FG,2);
@@ -762,11 +775,12 @@ static void render_onboard(void)
             roulette_render(&s_roulette);
             break;
         case OB_PASS_WARN:
-            st7789_fb_rect_outline(14,40,212,100,PBL_FG);
-            ui_str_center(58,"Weak Password",PBL_FG,2);
-            ui_str_center(82,"Less than 8 chars.",PBL_FG,1);
-            ui_str_center(102,"K3 = continue anyway",PBL_DIM,1);
-            ui_str_center(118,"K4 = set stronger",PBL_DIM,1);
+            ui_rounded_rect_outline(14,44,212,96,6,PBL_FG);
+            ui_str_center(62,"Weak Password",PBL_FG,2);
+            ui_str_center(86,"Less than 8 chars.",PBL_DIM,1);
+            st7789_fb_hline(30,100,180,PBL_LINE);
+            ui_str_center(114,"K3 continue anyway",PBL_FG,1);
+            ui_str_center(130,"K4 set stronger",PBL_DIM,1);
             break;
         case OB_SET_NAME:
             ui_str_center(30,"Wallet Name",PBL_FG,2);
@@ -800,11 +814,10 @@ static void render_settings(void)
     for(int i=0;i<SETTINGS_COUNT;i++){
         int y=STATUS_BAR_H+4+i*24;
         if(y+21>LCD_H-12) break;
-        uint16_t bg=(s_settings_sel==i)?PBL_FG:PBL_BG;
         uint16_t fg=(s_settings_sel==i)?PBL_BG:PBL_FG;
-        st7789_fb_rect(6,y,LCD_W-12,21,bg);
-        st7789_fb_rect_outline(6,y,LCD_W-12,21,(s_settings_sel==i)?PBL_FG:PBL_LINE);
-        ui_str(12,y+6,s_settings_items[i],fg,1);
+        if(s_settings_sel==i) ui_rounded_rect(6,y,LCD_W-12,21,4,PBL_FG);
+        else                   ui_rounded_rect_outline(6,y,LCD_W-12,21,4,PBL_LINE);
+        ui_str(14,y+6,s_settings_items[i],fg,1);
     }
     ui_str_center(LCD_H-12,"K1/K2 nav  K3 select  K4 back",PBL_DIM,1);
 }
@@ -997,13 +1010,27 @@ static void render_games_menu(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status("Games");
     for(int i=0;i<3;i++){
-        int y=STATUS_BAR_H+20+i*64;
-        uint16_t bg=(s_games_sel==i)?PBL_FG:PBL_BG;
+        int y=STATUS_BAR_H+8+i*62;
         uint16_t fg=(s_games_sel==i)?PBL_BG:PBL_FG;
-        st7789_fb_rect(20,y,200,54,bg);
-        st7789_fb_rect_outline(20,y,200,54,(s_games_sel==i)?PBL_FG:PBL_LINE);
+        uint16_t ic=(s_games_sel==i)?PBL_BG:PBL_DIM;
+        if(s_games_sel==i) ui_rounded_rect(16,y,208,56,6,PBL_FG);
+        else               ui_rounded_rect_outline(16,y,208,56,6,PBL_LINE);
         int tw=ui_str_width(s_game_names[i],2);
-        ui_str(120-tw/2,y+19,s_game_names[i],fg,2);
+        ui_str(78-tw/2+24,y+20,s_game_names[i],fg,2);
+        // Game icon on left
+        int ix=48, iy=y+28;
+        if(i==0){
+            st7789_fb_circle_fill(ix,iy,7,ic);              // pong ball
+        } else if(i==1){
+            st7789_fb_rect(ix-8,iy-8,8,8,ic);              // tetris blocks
+            st7789_fb_rect(ix,iy-8,8,8,ic);
+            st7789_fb_rect(ix-8,iy,8,8,ic);
+        } else {
+            st7789_fb_circle(ix,iy,9,ic);                   // tama face
+            st7789_fb_pixel(ix-3,iy-3,ic);
+            st7789_fb_pixel(ix+3,iy-3,ic);
+            st7789_fb_hline(ix-4,iy+3,8,ic);
+        }
     }
     ui_str_center(LCD_H-12,"K1/K2 select  K3 play  K4 back",PBL_DIM,1);
 }
@@ -1029,10 +1056,16 @@ static void render_tetris(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
     if(tet.over){
-        ui_str_center(80,"GAME OVER",PBL_FG,3);
-        char sc[20]; snprintf(sc,sizeof(sc),"Score: %lu",(unsigned long)tet.score);
-        ui_str_center(122,sc,PBL_FG,2);
-        ui_str_center(155,"K3 again  K4 back",PBL_DIM,1);
+        st7789_fb_hline(20,62,200,PBL_LINE);
+        ui_str_center(82,"GAME OVER",PBL_FG,3);
+        st7789_fb_hline(20,116,200,PBL_LINE);
+        char sc[24]; snprintf(sc,sizeof(sc),"Score  %lu",(unsigned long)tet.score);
+        ui_str_center(130,sc,PBL_FG,1);
+        char lv[16]; snprintf(lv,sizeof(lv),"Level  %u",tet.level);
+        ui_str_center(146,lv,PBL_DIM,1);
+        st7789_fb_hline(20,160,200,PBL_LINE);
+        ui_str_center(176,"K3 again",PBL_FG,2);
+        ui_str_center(200,"K4 back",PBL_DIM,2);
         return;
     }
     st7789_fb_rect_outline(TBX-1,TBY-1,TC*TCW+2,TR*TCH+2,PBL_LINE);
@@ -1076,9 +1109,9 @@ static void draw_tama_pet(int cx,int cy)
 
 static void draw_tama_bar(int x,int y,const char*lbl,uint8_t v){
     ui_str(x,y,lbl,PBL_DIM,1);
-    st7789_fb_rect_outline(x+20,y+1,60,6,PBL_LINE);
-    uint16_t c=(v>50)?PBL_FG:PBL_DIM;
-    st7789_fb_rect(x+20,y+1,60*v/100,6,c);
+    st7789_fb_rect_outline(x+24,y+1,64,6,PBL_LINE);
+    uint16_t c=(v>50)?PBL_FG:(v>20)?PBL_DIM:rgb565(0xFF,0x38,0x10);
+    if(v>0) st7789_fb_rect(x+24,y+1,64*v/100,6,c);
 }
 
 static void render_tamagotchi(void)
@@ -1091,9 +1124,9 @@ static void render_tamagotchi(void)
         return;
     }
     draw_tama_pet(LCD_W/2,112);
-    draw_tama_bar(10,168,"H:",tama.hunger);
-    draw_tama_bar(10,182,"J:",tama.happy);
-    draw_tama_bar(10,196,"E:",tama.energy);
+    draw_tama_bar(8,168,"HNG",tama.hunger);
+    draw_tama_bar(8,182,"JOY",tama.happy);
+    draw_tama_bar(8,196,"NRG",tama.energy);
     if(tama_msg_on) ui_str_center(152,tama_msg,PBL_FG,2);
     ui_str_center(LCD_H-12,"K1 Feed K2 Play K3 Nap",PBL_DIM,1);
 }
