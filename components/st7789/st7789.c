@@ -50,7 +50,7 @@ esp_err_t st7789_init(void)
         .miso_io_num     = -1,
         .quadwp_io_num   = -1,
         .quadhd_io_num   = -1,
-        .max_transfer_sz = LCD_W * 8 * sizeof(uint16_t) + 64,
+        .max_transfer_sz = LCD_W * 40 * sizeof(uint16_t) + 64,
     };
     esp_err_t err = spi_bus_initialize(_SPI, &bus, SPI_DMA_CH_AUTO);
     if (err != ESP_OK) {
@@ -63,7 +63,7 @@ esp_err_t st7789_init(void)
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .dc_gpio_num       = _DC,
         .cs_gpio_num       = -1,              // CS tied to GND on module
-        .pclk_hz           = 10 * 1000 * 1000,
+        .pclk_hz           = 40 * 1000 * 1000,
         .lcd_cmd_bits      = 8,
         .lcd_param_bits    = 8,
         .spi_mode          = 3,               // CPOL=1, CPHA=1 — CRITICAL
@@ -151,8 +151,8 @@ uint16_t *st7789_get_fb(void) { return s_fb; }
 void st7789_flush(void)
 {
     if (!s_panel || !s_fb) return;
-    // Push in 8-row stripes (8*240*2 = 3840 B per transaction — safe for SPI DMA)
-    const int STRIPE = 8;
+    // Push in larger stripes to reduce transaction overhead on full-screen redraws.
+    const int STRIPE = 40;
     for (int y = 0; y < LCD_H; y += STRIPE) {
         int rows = (y + STRIPE <= LCD_H) ? STRIPE : (LCD_H - y);
         esp_lcd_panel_draw_bitmap(s_panel,

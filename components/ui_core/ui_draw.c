@@ -53,14 +53,12 @@ void ui_battery_icon(int x, int y, uint8_t pct, bool charging)
 {
     // Body: 24x12, tip: 3x6
     const int BW = 24, BH = 12;
-    st7789_fb_rect_outline(x, y, BW, BH, COLOR_LTGRAY);
+    st7789_fb_rect_outline(x, y, BW, BH, COLOR_WHITE);
     // Tip
-    st7789_fb_rect(x + BW, y + 3, 3, 6, COLOR_LTGRAY);
+    st7789_fb_rect(x + BW, y + 3, 3, 6, COLOR_WHITE);
 
     // Fill level
-    uint16_t fill_color = (pct > 30) ? COLOR_SOL_GRN :
-                          (pct > 15) ? COLOR_YELLOW   : COLOR_RED;
-    if (charging) fill_color = COLOR_CYAN;
+    uint16_t fill_color = (pct > 15) ? COLOR_WHITE : COLOR_GRAY;
     int fill_w = (int)((BW - 4) * pct / 100);
     if (fill_w > BW - 4) fill_w = BW - 4;
     if (fill_w > 0) {
@@ -78,8 +76,8 @@ void ui_battery_icon(int x, int y, uint8_t pct, bool charging)
 
 void ui_status_bar(const char *time_str, uint8_t bat_pct, bool charging)
 {
-    // Dark background strip
-    st7789_fb_rect(0, 0, LCD_W, STATUS_BAR_H, COLOR_DARKBG);
+    st7789_fb_rect(0, 0, LCD_W, STATUS_BAR_H, COLOR_BLACK);
+    st7789_fb_hline(0, STATUS_BAR_H - 1, LCD_W, COLOR_GRAY);
 
     // Time (left side, scale 2)
     ui_str(4, (STATUS_BAR_H - 8*2) / 2, time_str, COLOR_WHITE, 2);
@@ -90,13 +88,13 @@ void ui_status_bar(const char *time_str, uint8_t bat_pct, bool charging)
 
 void ui_nfc_icon(int x, int y, bool armed)
 {
-    uint16_t c = armed ? COLOR_SOL_GRN : COLOR_RED;
+    uint16_t c = armed ? COLOR_WHITE : COLOR_GRAY;
     st7789_fb_circle(x + 6, y + 6, 6, c);
-    st7789_fb_circle(x + 6, y + 6, 4, c);
+    st7789_fb_circle(x + 6, y + 6, 3, c);
     st7789_fb_pixel(x + 6, y + 6, c);
     if (!armed) {
         // Strikethrough
-        st7789_fb_hline(x, y + 6, 14, COLOR_RED);
+        st7789_fb_hline(x, y + 6, 14, COLOR_WHITE);
     }
 }
 
@@ -141,9 +139,9 @@ void ui_nfc_widget(bool armed)
     // 90x72 centered overlay
     int wx = (LCD_W - 90) / 2;
     int wy = (LCD_H - 72) / 2;
-    ui_rounded_rect(wx, wy, 90, 72, 10, COLOR_DARKBG);
-    uint16_t c = armed ? COLOR_SOL_GRN : COLOR_RED;
-    ui_rounded_rect_outline(wx, wy, 90, 72, 10, c);
+    ui_rounded_rect(wx, wy, 90, 72, 6, COLOR_BLACK);
+    uint16_t c = armed ? COLOR_WHITE : COLOR_GRAY;
+    ui_rounded_rect_outline(wx, wy, 90, 72, 6, c);
 
     // NFC rings
     int cx = LCD_W / 2, cy = LCD_H / 2 - 4;
@@ -156,7 +154,7 @@ void ui_nfc_widget(bool armed)
         // Diagonal strikethrough
         for (int i = -2; i <= 2; i++) {
             for (int k = 0; k < 40; k++) {
-                st7789_fb_pixel(wx + 5 + k, wy + 5 + k + i, COLOR_RED);
+                st7789_fb_pixel(wx + 5 + k, wy + 5 + k + i, COLOR_WHITE);
             }
         }
     }

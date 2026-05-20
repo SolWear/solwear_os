@@ -31,6 +31,8 @@ typedef enum {
     SCR_ONBOARD,
     SCR_LOCK,
     SCR_HOME,
+    SCR_WALLET,
+    SCR_RECEIVE,
     SCR_SETTINGS,
     SCR_TRANSACTIONS,
     SCR_STATS,
@@ -38,7 +40,6 @@ typedef enum {
     SCR_PING_PONG,
     SCR_TETRIS,
     SCR_TAMAGOTCHI,
-    SCR_CHARGING,
 } screen_id_t;
 
 typedef enum { SLIDE_WATCHFACE=0, SLIDE_GRID, SLIDE_COUNT } home_slide_t;
@@ -48,18 +49,26 @@ typedef enum { SLIDE_WATCHFACE=0, SLIDE_GRID, SLIDE_COUNT } home_slide_t;
 // ============================================================
 static screen_id_t  s_screen   = SCR_ONBOARD;
 static home_slide_t s_slide    = SLIDE_WATCHFACE;
-static int8_t       s_grid_sel = 0;   // 0..3 in 2x2 grid
-static uint8_t      s_watchface = 0;  // 0=digital 1=analog 2=minimal
+static int8_t       s_grid_sel = 0;   // launcher app index
+#define WATCHFACE_COUNT 6
+#define GRID_APP_COUNT 7
+#define GRID_PAGE_COUNT ((GRID_APP_COUNT + 3) / 4)
+static uint8_t      s_watchface = 0;  // 0=GM 1=GN 2=digital 3=analog 4=wallet 5=minimal
 
 static bool     s_nfc_armed        = true;
 static uint32_t s_nfc_widget_ms    = 0;
 static bool     s_nfc_widget_armed = true;
+static uint32_t s_sync_widget_ms   = 0;
+static uint32_t s_sync_seen_counter = 0;
 
 // TX overlay
 static bool     s_tx_overlay  = false;
 typedef enum { TX_SHOW, TX_TIMER, TX_CONFIRM2 } tx_state_t;
 static tx_state_t s_tx_state  = TX_SHOW;
 static uint32_t   s_tx_timer  = 0;
+static uint8_t    s_pending_sig[64];
+static bool       s_pending_sig_valid = false;
+static char       s_pending_sig_nonce[37];
 
 // Clock
 static int s_h = 12, s_m = 0, s_s = 0;
@@ -100,10 +109,11 @@ static uint8_t hex_nibble(char c)
 // ============================================================
 static int8_t s_settings_sel = 0;
 static const char *s_settings_items[] = {
-    "Watchface: Digital","Watchface: Analog","Watchface: Minimal",
+    "Watchface: GM","Watchface: GN","Watchface: Digital","Watchface: Analog",
+    "Watchface: Wallet","Watchface: Minimal",
     "Change Password","About"
 };
-#define SETTINGS_COUNT 5
+#define SETTINGS_COUNT 8
 
 // ============================================================
 // Transactions
@@ -205,7 +215,10 @@ static const int8_t kP[7][4][4][2]={
     {{{0,0},{0,1},{1,1},{2,1}},{{1,0},{2,0},{1,1},{1,2}},{{0,1},{1,1},{2,1},{2,2}},{{1,0},{1,1},{0,2},{1,2}}},
     {{{2,0},{0,1},{1,1},{2,1}},{{1,0},{1,1},{1,2},{2,2}},{{0,1},{1,1},{2,1},{0,2}},{{0,0},{1,0},{1,1},{1,2}}},
 };
-static const uint16_t kTC[7]={0x07FF,0xFFE0,0xF81F,0x07E0,0xF800,0x001F,0xFD20};
+static const uint16_t kTC[7]={
+    COLOR_WHITE, COLOR_LTGRAY, COLOR_GRAY, 0xBDD7,
+    0x8C51, 0x6B4D, 0xDEDB
+};
 
 static struct {
     uint8_t b[TR][TC];
@@ -258,6 +271,7 @@ static uint32_t  tama_anim=0;
 static bool      tama_msg_on=false;
 static uint32_t  tama_msg_t=0;
 static char      tama_msg[24]={};
+static uint32_t  s_anim=0;
 
 static void tama_load(void){
     FILE*f=fopen(TAMA_PATH,"rb");
@@ -279,6 +293,12 @@ static void on_button(btn_event_t ev){ xQueueSend(s_btn_q, &ev, 0); }
 // ============================================================
 // Draw helpers
 // ============================================================
+#define PBL_BG      COLOR_BLACK
+#define PBL_FG      COLOR_WHITE
+#define PBL_DIM     RGB565(0x7B,0x7B,0x7B)
+#define PBL_LINE    RGB565(0x3A,0x3A,0x3A)
+#define PBL_PANEL   RGB565(0x10,0x10,0x10)
+
 static void draw_status(const char *title)
 {
     char t[8]; snprintf(t,sizeof(t),"%02d:%02d",s_h,s_m);
@@ -291,62 +311,214 @@ static void draw_status(const char *title)
 
 static void draw_icon_card(int x,int y,int w,int h,const char*lbl,bool sel)
 {
-    ui_rounded_rect(x,y,w,h,8,sel?COLOR_SOL_PUR:COLOR_DARKBG);
-    if(sel) ui_select_box(x,y,w,h,COLOR_SOL_GRN);
-    int tw=ui_str_width(lbl,2); ui_str(x+(w-tw)/2,y+h/2-8,lbl,COLOR_WHITE,2);
+    uint16_t bg = sel ? PBL_FG : PBL_BG;
+    uint16_t fg = sel ? PBL_BG : PBL_FG;
+    st7789_fb_rect(x,y,w,h,bg);
+    st7789_fb_rect_outline(x,y,w,h,sel?PBL_FG:PBL_LINE);
+    if(sel && ((s_anim / 240) & 1)) st7789_fb_rect_outline(x+2,y+2,w-4,h-4,PBL_BG);
+    int tw=ui_str_width(lbl,1);
+    ui_str(x+(w-tw)/2,y+h-14,lbl,fg,1);
+}
+
+static void short_pk_hex(const uint8_t *pk, char *out, size_t out_len)
+{
+    if (!pk || !out || out_len < 18) return;
+    snprintf(out, out_len, "%02X%02X...%02X%02X",
+             pk[0], pk[1], pk[30], pk[31]);
+}
+
+static void short_text(const char *src, char *out, size_t out_len)
+{
+    if (!out || out_len < 12) return;
+    if (!src || !src[0] || src[0] == '?') {
+        strncpy(out, "unknown", out_len - 1);
+        out[out_len - 1] = '\0';
+        return;
+    }
+    size_t len = strlen(src);
+    if (len <= 12) {
+        strncpy(out, src, out_len - 1);
+        out[out_len - 1] = '\0';
+        return;
+    }
+    snprintf(out, out_len, "%.4s...%.4s", src, src + len - 4);
+}
+
+static void draw_line(int x0, int y0, int x1, int y1, uint16_t c)
+{
+    int dx=abs(x1-x0), sx=x0<x1?1:-1;
+    int dy=-abs(y1-y0), sy=y0<y1?1:-1;
+    int err=dx+dy;
+    while(1){
+        st7789_fb_pixel(x0,y0,c);
+        if(x0==x1&&y0==y1) break;
+        int e2=2*err;
+        if(e2>=dy){err+=dy;x0+=sx;}
+        if(e2<=dx){err+=dx;y0+=sy;}
+    }
+}
+
+static void draw_meter(int x, int y, int w, int h, uint8_t pct, uint16_t c)
+{
+    st7789_fb_rect_outline(x,y,w,h,c);
+    int fill=(w-4)*pct/100;
+    if(fill>0) st7789_fb_rect(x+2,y+2,fill,h-4,c);
+}
+
+static void draw_app_icon(int icon, int cx, int cy, uint16_t c, uint16_t bg)
+{
+    switch(icon){
+        case 0: // wallet
+            st7789_fb_rect_outline(cx-18,cy-10,36,24,c);
+            st7789_fb_hline(cx-16,cy-3,32,c);
+            st7789_fb_circle_fill(cx+10,cy+2,2,c);
+            break;
+        case 1: // receive
+            draw_line(cx,cy-18,cx,cy+4,c);
+            draw_line(cx-9,cy-5,cx,cy+4,c);
+            draw_line(cx+9,cy-5,cx,cy+4,c);
+            st7789_fb_rect_outline(cx-18,cy+9,36,10,c);
+            break;
+        case 2: // activity
+            for(int i=0;i<3;i++){
+                st7789_fb_circle_fill(cx-15,cy-12+i*12,2,c);
+                st7789_fb_hline(cx-8,cy-12+i*12,28,c);
+            }
+            break;
+        case 3: // stats
+            st7789_fb_rect(cx-17,cy+4,6,14,c);
+            st7789_fb_rect(cx-7,cy-4,6,22,c);
+            st7789_fb_rect(cx+3,cy-14,6,32,c);
+            st7789_fb_rect(cx+13,cy-8,6,26,c);
+            break;
+        case 4: // games
+            st7789_fb_rect_outline(cx-20,cy-10,22,20,c);
+            st7789_fb_hline(cx-16,cy,14,c);
+            st7789_fb_vline(cx-9,cy-7,14,c);
+            st7789_fb_circle_fill(cx+13,cy-4,3,c);
+            st7789_fb_circle_fill(cx+22,cy+5,3,c);
+            break;
+        case 5: // settings
+            st7789_fb_circle(cx,cy,13,c);
+            st7789_fb_circle(cx,cy,5,c);
+            st7789_fb_hline(cx-20,cy,7,c); st7789_fb_hline(cx+14,cy,7,c);
+            st7789_fb_vline(cx,cy-20,7,c); st7789_fb_vline(cx,cy+14,7,c);
+            break;
+        default: // lock
+            st7789_fb_rect_outline(cx-15,cy-1,30,20,c);
+            st7789_fb_circle(cx,cy-4,12,c);
+            st7789_fb_rect(cx-12,cy-4,24,8,bg);
+            st7789_fb_vline(cx,cy+6,8,c);
+            break;
+    }
+}
+
+static void draw_app_tile(int x, int y, int icon, const char *label, bool sel)
+{
+    draw_icon_card(x, y, 94, 78, label, sel);
+    uint16_t fg = sel ? PBL_BG : PBL_FG;
+    uint16_t bg = sel ? PBL_FG : PBL_BG;
+    draw_app_icon(icon, x + 47, y + 31, fg, bg);
 }
 
 // ============================================================
 // Render functions
 // ============================================================
-static uint32_t s_anim=0;
 
 static void render_watchface(void)
 {
-    ui_gradient_h(0,STATUS_BAR_H,LCD_W,LCD_H-STATUS_BAR_H-10,
-                  COLOR_DARKBG,RGB565(0x06,0x06,0x28));
+    st7789_fb_rect(0,STATUS_BAR_H,LCD_W,LCD_H-STATUS_BAR_H,PBL_BG);
     char t[6]; snprintf(t,sizeof(t),"%02d:%02d",s_h,s_m);
+    char sec[4]; snprintf(sec,sizeof(sec),":%02d",s_s);
+    const char *nm=wallet_name();
+    const uint8_t *pk=wallet_pubkey();
+    char short_pk[20]; short_pk_hex(pk, short_pk, sizeof(short_pk));
+    uint8_t bat=hal_battery_percent();
 
     if(s_watchface==0){
-        int tw=ui_str_width(t,4); ui_str(LCD_W/2-tw/2,88,t,COLOR_WHITE,4);
-        ui_str_center(150,"2026 May 05",COLOR_GRAY,1);
+        ui_str_center(36,"GOOD MORNING",PBL_DIM,1);
+        ui_str_center(58,"GM",PBL_FG,4);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,112,t,PBL_FG,3);
+        ui_str(LCD_W/2+tw/2+2,120,sec,PBL_DIM,1);
+        st7789_fb_hline(46,155,148,PBL_LINE);
+        ui_str(48,164,"TODAY",PBL_DIM,1);
+        ui_str_right(192,164,s_nfc_armed?"NFC READY":"NFC OFF",PBL_FG,1);
+        draw_meter(48,184,144,8,bat,PBL_FG);
     } else if(s_watchface==1){
+        for(int i=0;i<18;i++){
+            int x=(i*37+17)%LCD_W;
+            int y=STATUS_BAR_H+12+((i*29+11)%(LCD_H-STATUS_BAR_H-48));
+            st7789_fb_pixel(x,y,(i%3)==0?PBL_FG:PBL_DIM);
+        }
+        st7789_fb_circle(68,62,18,PBL_FG);
+        st7789_fb_circle_fill(75,58,18,PBL_BG);
+        ui_str_center(52,"GOOD NIGHT",PBL_DIM,1);
+        ui_str_center(78,"GN",PBL_FG,4);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,134,t,PBL_FG,3);
+        ui_str_center(180,"K4x3 LOCKS WALLET",PBL_DIM,1);
+        draw_meter(54,196,132,7,bat,PBL_FG);
+    } else if(s_watchface==2){
+        ui_str_center(40,"SOLWEAR",PBL_DIM,1);
+        int tw=ui_str_width(t,4); ui_str(LCD_W/2-tw/2,78,t,PBL_FG,4);
+        ui_str_center(122,sec,PBL_DIM,2);
+        st7789_fb_rect_outline(34,158,172,34,PBL_LINE);
+        ui_str_center(168,nm&&nm[0]?nm:"PROTO V2",PBL_FG,1);
+        ui_str_center(182,short_pk,PBL_DIM,1);
+    } else if(s_watchface==3){
         int cx=LCD_W/2, cy=STATUS_BAR_H+90, r=70;
-        st7789_fb_circle(cx,cy,r,COLOR_LTGRAY);
+        st7789_fb_circle(cx,cy,r,PBL_FG);
+        st7789_fb_circle(cx,cy,r-9,PBL_LINE);
         for(int i=0;i<12;i++){
             float a=i*3.14159f*30.f/180.f;
-            int x1=cx+(int)((r-8)*sinf(a)), y1=cy-(int)((r-8)*cosf(a));
-            int x2=cx+(int)(r*sinf(a)),     y2=cy-(int)(r*cosf(a));
-            if(x1>x2){int tmp=x1;x1=x2;x2=tmp;}
-            if(y1>y2){int tmp=y1;y1=y2;y2=tmp;}
-            st7789_fb_hline(x1,y1,x2-x1+1,COLOR_LTGRAY);
+            int x1=cx+(int)((r-13)*sinf(a)), y1=cy-(int)((r-13)*cosf(a));
+            int x2=cx+(int)((r-4)*sinf(a)),  y2=cy-(int)((r-4)*cosf(a));
+            draw_line(x1,y1,x2,y2,(i%3)==0?PBL_FG:PBL_DIM);
         }
         float ha=((s_h%12)+s_m/60.f)*30.f*3.14159f/180.f;
         float ma=s_m*6.f*3.14159f/180.f;
-        for(int i=0;i<3;i++){
-            st7789_fb_hline(cx-(i==1?1:0),cy,(int)(42*sinf(ha)),COLOR_WHITE);
-            st7789_fb_vline(cx+(int)(42*sinf(ha)),cy-(int)(42*cosf(ha)),(int)(42*fabsf(cosf(ha))),COLOR_WHITE);
-            st7789_fb_hline(cx-(i==1?1:0),cy,(int)(60*sinf(ma)),COLOR_SOL_GRN);
-            st7789_fb_vline(cx+(int)(60*sinf(ma)),cy-(int)(60*cosf(ma)),(int)(60*fabsf(cosf(ma))),COLOR_SOL_GRN);
-        }
-        st7789_fb_circle_fill(cx,cy,4,COLOR_SOL_PUR);
+        float sa=s_s*6.f*3.14159f/180.f;
+        draw_line(cx,cy,cx+(int)(38*sinf(ha)),cy-(int)(38*cosf(ha)),PBL_FG);
+        draw_line(cx,cy,cx+(int)(58*sinf(ma)),cy-(int)(58*cosf(ma)),PBL_FG);
+        draw_line(cx,cy,cx+(int)(62*sinf(sa)),cy-(int)(62*cosf(sa)),PBL_DIM);
+        st7789_fb_circle_fill(cx,cy,4,PBL_FG);
+        ui_str_center(184,t,PBL_DIM,1);
+    } else if(s_watchface==4) {
+        ui_str_center(38,"WALLET",PBL_DIM,1);
+        char bal[28]; snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
+        int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,72,bal,PBL_FG,3);
+        st7789_fb_rect_outline(34,124,172,42,PBL_LINE);
+        ui_str_center(134,short_pk,PBL_FG,1);
+        ui_str_center(150,s_nfc_armed?"PHONE READS TAG":"NFC OFF",PBL_DIM,1);
+        ui_str_center(190,"K3 CYCLES FACE",PBL_DIM,1);
     } else {
-        ui_str_center(80,"SolWear",COLOR_SOL_PUR,3);
-        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,112,t,COLOR_SOL_GRN,3);
-        const char*nm=wallet_name(); if(nm&&nm[0]) ui_str_center(158,nm,COLOR_GRAY,1);
+        st7789_fb_rect(34,48,172,40,PBL_FG);
+        ui_str_center(60,"SOLWEAR",PBL_BG,2);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,108,t,PBL_FG,3);
+        ui_str_center(150,"TINY TRUSTED SIGNER",PBL_DIM,1);
+        st7789_fb_hline(54,176,132,PBL_LINE);
+        ui_str_center(188,s_nfc_armed?"READY":"OFFLINE",PBL_FG,1);
     }
     ui_nfc_icon(LCD_W-18,STATUS_BAR_H+4,s_nfc_armed);
 }
 
 static void render_home_grid(void)
 {
-    st7789_fb_rect(0,STATUS_BAR_H,LCD_W,LCD_H-STATUS_BAR_H,COLOR_BLACK);
-    const int IW=108,IH=90,GAP=8;
-    int x0=(LCD_W-2*IW-GAP)/2, y0=STATUS_BAR_H+12;
-    const char *lbl[4]={"Settings","Txns","Stats","Games"};
-    for(int i=0;i<4;i++){
-        int col=i%2,row=i/2;
-        draw_icon_card(x0+col*(IW+GAP),y0+row*(IH+GAP),IW,IH,lbl[i],s_grid_sel==i);
+    st7789_fb_rect(0,STATUS_BAR_H,LCD_W,LCD_H-STATUS_BAR_H,PBL_BG);
+    const char *lbl[GRID_APP_COUNT]={"Wallet","Receive","Activity","Stats","Games","Settings","Lock"};
+    int page=s_grid_sel/4;
+    int start=page*4;
+    const int W=94,H=78,GX=14,GY=10;
+    int x0=(LCD_W-2*W-GX)/2, y0=STATUS_BAR_H+12;
+    for(int pos=0;pos<4;pos++){
+        int idx=start+pos;
+        if(idx>=GRID_APP_COUNT) break;
+        int col=pos%2,row=pos/2;
+        draw_app_tile(x0+col*(W+GX),y0+row*(H+GY),idx,lbl[idx],s_grid_sel==idx);
+    }
+    for(int i=0;i<GRID_PAGE_COUNT;i++){
+        int dx=LCD_W/2-(GRID_PAGE_COUNT-1)*8+i*16;
+        if(i==page) st7789_fb_circle_fill(dx,LCD_H-20,3,PBL_FG);
+        else        st7789_fb_circle(dx,LCD_H-20,3,PBL_DIM);
     }
 }
 
@@ -359,22 +531,25 @@ static void render_home(void)
     // Dots
     for(int i=0;i<SLIDE_COUNT;i++){
         int dx=LCD_W/2-(SLIDE_COUNT-1)*8+i*16;
-        if(i==s_slide) st7789_fb_circle_fill(dx,LCD_H-7,3,COLOR_SOL_PUR);
-        else            st7789_fb_circle(dx,LCD_H-7,3,COLOR_GRAY);
+        if(i==s_slide) st7789_fb_circle_fill(dx,LCD_H-7,3,PBL_FG);
+        else            st7789_fb_circle(dx,LCD_H-7,3,PBL_DIM);
     }
 }
 
 static void render_ob_choice(const char *title, const char *a, const char *b)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
-    ui_str_center(30,title,COLOR_WHITE,2);
+    ui_str_center(30,title,PBL_FG,2);
     for(int i=0;i<2;i++){
         int y=80+i*80;
-        ui_rounded_rect(20,y,200,60,8,(s_ob_sel==i)?COLOR_SOL_PUR:COLOR_DARKBG);
+        uint16_t bg=(s_ob_sel==i)?PBL_FG:PBL_BG;
+        uint16_t fg=(s_ob_sel==i)?PBL_BG:PBL_FG;
+        st7789_fb_rect(20,y,200,60,bg);
+        st7789_fb_rect_outline(20,y,200,60,(s_ob_sel==i)?PBL_FG:PBL_LINE);
         const char*l=(i==0)?a:b; int tw=ui_str_width(l,2);
-        ui_str(120-tw/2,y+22,l,COLOR_WHITE,2);
+        ui_str(120-tw/2,y+22,l,fg,2);
     }
-    ui_str_center(220,"K1/K2=choose  K3=confirm",COLOR_GRAY,1);
+    ui_str_center(220,"K1/K2 choose  K3 confirm",PBL_DIM,1);
 }
 
 static void render_onboard(void)
@@ -382,60 +557,59 @@ static void render_onboard(void)
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
     switch(s_ob){
         case OB_WELCOME:
-            ui_str_center(65,"SolWearOS",COLOR_SOL_PUR,3);
-            ui_str_center(115,"Solana Hardware Wallet",COLOR_GRAY,1);
-            ui_str_center(165,"Press K3 to begin",COLOR_SOL_GRN,2);
+            st7789_fb_rect(28,54,184,42,PBL_FG);
+            ui_str_center(66,"SolWearOS",PBL_BG,3);
+            ui_str_center(115,"Solana Hardware Wallet",PBL_DIM,1);
+            ui_str_center(165,"Press K3 to begin",PBL_FG,2);
             break;
         case OB_CHOICE:
             render_ob_choice("Setup Wallet","Generate Key","Import Key");
             break;
         case OB_IMPORT_HOW:
-            render_ob_choice("Import How?","Via NFC","Manual Entry");
+            render_ob_choice("Import Key","Manual Entry","Back");
             break;
         case OB_IMPORT_NFC:{
-            ui_str_center(30,"Import via NFC",COLOR_WHITE,2);
-            uint16_t pc=(uint16_t)(80+60.f*sinf(s_anim*0.004f));
-            uint16_t nc=((pc>>3)<<11)|((pc>>2)<<5)|(pc>>3);
+            ui_str_center(30,"NFC Import Removed",PBL_FG,2);
+            uint16_t nc=((s_anim/180)&1)?PBL_FG:PBL_DIM;
             st7789_fb_circle(120,130,24,nc); st7789_fb_circle(120,130,16,nc);
             st7789_fb_circle(120,130,8,nc);  st7789_fb_circle_fill(120,130,3,nc);
-            ui_str_center(170,"Tap phone to watch",COLOR_GRAY,1);
-            ui_str_center(190,"K4 = back",COLOR_GRAY,1);
+            ui_str_center(170,"Use manual entry",PBL_DIM,1);
+            ui_str_center(190,"K4 = back",PBL_DIM,1);
             break;
         }
         case OB_IMPORT_HEX:
-            ui_str_center(30,"Private Key (hex)",COLOR_WHITE,2);
-            ui_str_center(48,"64 chars, A-F 0-9",COLOR_GRAY,1);
+            ui_str_center(30,"Private Key (hex)",PBL_FG,2);
+            ui_str_center(48,"64 chars, A-F 0-9",PBL_DIM,1);
             roulette_render(&s_roulette);
             break;
         case OB_GEN_CONFIRM:
-            ui_str_center(40,"Key Ready!",COLOR_SOL_GRN,2);
-            ui_rounded_rect(16,70,208,28,6,COLOR_DARKBG);
-            ui_str_center(79,s_ob_pub4,COLOR_SOL_PUR,2);
-            ui_str_center(110,"...first 4 bytes shown",COLOR_GRAY,1);
-            ui_str_center(155,"K3 = set password",COLOR_WHITE,2);
-            ui_str_center(178,"K4 = restart",COLOR_GRAY,1);
+            ui_str_center(40,"Key Ready",PBL_FG,2);
+            st7789_fb_rect_outline(16,70,208,28,PBL_LINE);
+            ui_str_center(79,s_ob_pub4,PBL_FG,2);
+            ui_str_center(110,"first 4 bytes shown",PBL_DIM,1);
+            ui_str_center(155,"K3 = set password",PBL_FG,2);
+            ui_str_center(178,"K4 = restart",PBL_DIM,1);
             break;
         case OB_SET_PASS:
-            ui_str_center(30,"Set Password",COLOR_WHITE,2);
-            ui_str_center(48,"4-8 chars (1-8 A-Z)",COLOR_GRAY,1);
+            ui_str_center(30,"Set Password",PBL_FG,2);
+            ui_str_center(48,"4-8 chars (1-8 A-Z)",PBL_DIM,1);
             roulette_render(&s_roulette);
             break;
         case OB_PASS_WARN:
-            ui_rounded_rect(14,40,212,100,8,COLOR_DARKBG);
-            ui_rounded_rect_outline(14,40,212,100,8,COLOR_ORANGE);
-            ui_str_center(58,"Weak Password!",COLOR_ORANGE,2);
-            ui_str_center(82,"Less than 8 chars.",COLOR_WHITE,1);
-            ui_str_center(102,"K3 = continue anyway",COLOR_GRAY,1);
-            ui_str_center(118,"K4 = set stronger",COLOR_GRAY,1);
+            st7789_fb_rect_outline(14,40,212,100,PBL_FG);
+            ui_str_center(58,"Weak Password",PBL_FG,2);
+            ui_str_center(82,"Less than 8 chars.",PBL_FG,1);
+            ui_str_center(102,"K3 = continue anyway",PBL_DIM,1);
+            ui_str_center(118,"K4 = set stronger",PBL_DIM,1);
             break;
         case OB_SET_NAME:
-            ui_str_center(30,"Wallet Name",COLOR_WHITE,2);
+            ui_str_center(30,"Wallet Name",PBL_FG,2);
             roulette_render(&s_roulette);
             break;
         case OB_DONE:
-            ui_str_center(80,"Welcome!",COLOR_SOL_GRN,3);
-            ui_str_center(130,s_ob_name,COLOR_WHITE,2);
-            ui_str_center(170,"K3 to enter OS",COLOR_SOL_GRN,2);
+            ui_str_center(80,"Welcome",PBL_FG,3);
+            ui_str_center(130,s_ob_name,PBL_FG,2);
+            ui_str_center(170,"K3 to enter OS",PBL_DIM,2);
             break;
     }
 }
@@ -443,43 +617,116 @@ static void render_onboard(void)
 static void render_lock(void)
 {
     st7789_fb_fill(COLOR_BLACK);
-    ui_str_center(20,"SolWearOS",COLOR_SOL_PUR,2);
-    ui_str_center(42,"Enter Password",COLOR_GRAY,1);
+    ui_str_center(20,"SolWearOS",PBL_FG,2);
+    ui_str_center(42,"Enter Password",PBL_DIM,1);
     roulette_render(&s_roulette);
-    if(s_lock_err[0]) ui_str_center(LCD_H-16,s_lock_err,COLOR_RED,1);
+    if(s_lock_err[0]) ui_str_center(LCD_H-16,s_lock_err,PBL_FG,1);
 }
 
 static void render_settings(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status("Settings");
     for(int i=0;i<SETTINGS_COUNT;i++){
-        int y=STATUS_BAR_H+6+i*28;
-        if(y+24>LCD_H) break;
-        ui_rounded_rect(6,y,LCD_W-12,24,4,(s_settings_sel==i)?COLOR_SOL_PUR:COLOR_DARKBG);
-        ui_str(12,y+6,s_settings_items[i],COLOR_WHITE,1);
+        int y=STATUS_BAR_H+4+i*24;
+        if(y+21>LCD_H-12) break;
+        uint16_t bg=(s_settings_sel==i)?PBL_FG:PBL_BG;
+        uint16_t fg=(s_settings_sel==i)?PBL_BG:PBL_FG;
+        st7789_fb_rect(6,y,LCD_W-12,21,bg);
+        st7789_fb_rect_outline(6,y,LCD_W-12,21,(s_settings_sel==i)?PBL_FG:PBL_LINE);
+        ui_str(12,y+6,s_settings_items[i],fg,1);
     }
-    ui_str_center(LCD_H-12,"K1/K2=nav  K3=select  K4=back",COLOR_GRAY,1);
+    ui_str_center(LCD_H-12,"K1/K2 nav  K3 select  K4 back",PBL_DIM,1);
 }
 
 static void render_transactions(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status("Transactions");
     char bal[32]; snprintf(bal,sizeof(bal),"Bal: %.4f SOL",(double)s_balance);
-    ui_rounded_rect(4,STATUS_BAR_H+2,LCD_W-8,22,4,COLOR_DARKBG);
-    ui_str_center(STATUS_BAR_H+8,bal,(s_balance>=0)?COLOR_SOL_GRN:COLOR_RED,1);
+    st7789_fb_rect_outline(4,STATUS_BAR_H+2,LCD_W-8,22,PBL_LINE);
+    ui_str_center(STATUS_BAR_H+8,bal,PBL_FG,1);
     if(s_rx_n==0){
-        ui_str_center(130,"No transactions",COLOR_GRAY,2);
-        ui_str_center(158,"NFC to sign TX",COLOR_GRAY,1);
+        ui_str_center(130,"No transactions",PBL_DIM,2);
+        ui_str_center(158,"Phone prepares, watch signs",PBL_DIM,1);
         return;
     }
     for(int i=0;i<5&&(s_rx_scroll+i)<s_rx_n;i++){
         int y=STATUS_BAR_H+28+i*30;
-        ui_rounded_rect(4,y,LCD_W-8,26,4,COLOR_DARKBG);
+        st7789_fb_rect_outline(4,y,LCD_W-8,26,PBL_LINE);
         char tmp[40]; strncpy(tmp,s_rx[s_rx_scroll+i],39); tmp[39]='\0';
-        ui_str(8,y+7,tmp,COLOR_WHITE,1);
+        ui_str(8,y+7,tmp,PBL_FG,1);
     }
     char pg[12]; snprintf(pg,sizeof(pg),"%d/%d",s_rx_scroll+1,(int)s_rx_n);
-    ui_str_center(LCD_H-12,pg,COLOR_GRAY,1);
+    ui_str_center(LCD_H-12,pg,PBL_DIM,1);
+}
+
+static void render_wallet_app(void)
+{
+    st7789_fb_fill(COLOR_BLACK); draw_status("Wallet");
+    const uint8_t *pk=wallet_pubkey();
+    char p1[32], p2[32], bal[32];
+    snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
+    snprintf(p1,sizeof(p1),"%02X%02X%02X%02X %02X%02X%02X%02X",pk[0],pk[1],pk[2],pk[3],pk[4],pk[5],pk[6],pk[7]);
+    snprintf(p2,sizeof(p2),"%02X%02X%02X%02X %02X%02X%02X%02X",pk[24],pk[25],pk[26],pk[27],pk[28],pk[29],pk[30],pk[31]);
+
+    st7789_fb_rect_outline(10,34,220,62,PBL_LINE);
+    ui_str_center(46,"Balance",PBL_DIM,1);
+    int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,60,bal,PBL_FG,3);
+
+    st7789_fb_rect_outline(10,106,220,58,PBL_LINE);
+    ui_str(18,116,"Pubkey",PBL_DIM,1);
+    ui_str(18,134,p1,PBL_FG,1);
+    ui_str(18,148,p2,PBL_FG,1);
+
+    uint16_t c=s_nfc_armed?PBL_FG:PBL_DIM;
+    st7789_fb_rect_outline(10,176,220,34,PBL_LINE);
+    ui_str(18,188,"Phone:",PBL_DIM,1);
+    ui_str(82,188,"Tap to share",c,1);
+    ui_str_center(224,"K4=back",PBL_DIM,1);
+}
+
+static void render_receive_app(void)
+{
+    st7789_fb_fill(PBL_BG);
+    draw_status("Receive");
+
+    const uint8_t *pk=wallet_pubkey();
+    char pshort[20]; short_pk_hex(pk, pshort, sizeof(pshort));
+    const char *nm=wallet_name();
+
+    ui_str_center(38,nm&&nm[0]?nm:"SolWear",PBL_FG,2);
+    ui_str_center(62,"PHONE READS WATCH",PBL_DIM,1);
+
+    int cx=LCD_W/2, cy=116;
+    for(int r=18;r<=52;r+=17) st7789_fb_circle(cx,cy,r,s_nfc_armed?PBL_FG:PBL_DIM);
+    st7789_fb_circle_fill(cx,cy,6,s_nfc_armed?PBL_FG:PBL_DIM);
+    st7789_fb_rect_outline(32,158,176,30,PBL_LINE);
+    ui_str_center(168,pshort,PBL_FG,1);
+
+    ui_str_center(200,s_nfc_armed?"Hold phone within 3 cm":"NFC disabled",s_nfc_armed?PBL_FG:PBL_DIM,1);
+    ui_str_center(224,"K4=back",PBL_DIM,1);
+}
+
+static void render_sync_effect(void)
+{
+    if(s_sync_widget_ms==0) return;
+    uint16_t fg=PBL_FG;
+    st7789_fb_rect(18,52,204,126,PBL_BG);
+    st7789_fb_rect_outline(18,52,204,126,fg);
+
+    int wx=72, px=168, cy=104;
+    st7789_fb_rect_outline(wx-17,cy-25,34,50,fg);
+    st7789_fb_rect_outline(px-18,cy-28,36,56,fg);
+    int phase=(s_anim/140)%4;
+    for(int i=0;i<4;i++){
+        int x=102+i*12;
+        st7789_fb_rect(x,cy-2,5,5,(i==phase)?fg:PBL_DIM);
+    }
+    st7789_fb_circle_fill(wx,cy,3,fg);
+    st7789_fb_circle_fill(px,cy,3,fg);
+
+    const char *msg = g_nfc_sync.message[0] ? g_nfc_sync.message : "Wallet shared";
+    ui_str_center(148,msg,fg,1);
+    ui_str_center(162,"finish in phone app",PBL_DIM,1);
 }
 
 static void render_stats(void)
@@ -487,20 +734,21 @@ static void render_stats(void)
     st7789_fb_fill(COLOR_BLACK); draw_status("Stats");
     char buf[48]; int y=STATUS_BAR_H+10;
     snprintf(buf,sizeof(buf),"Battery:  %d%%",hal_battery_percent());
-    ui_str(8,y,buf,COLOR_SOL_GRN,2); y+=26;
+    ui_str(8,y,buf,PBL_FG,2); y+=26;
+    draw_meter(10,y,220,8,hal_battery_percent(),PBL_FG); y+=18;
     snprintf(buf,sizeof(buf),"Voltage:  %.2fV",hal_battery_mv()/1000.f);
-    ui_str(8,y,buf,COLOR_WHITE,1); y+=18;
+    ui_str(8,y,buf,PBL_FG,1); y+=18;
     snprintf(buf,sizeof(buf),"Charging: %s",hal_battery_charging()?"Yes":"No");
-    ui_str(8,y,buf,COLOR_WHITE,1); y+=18;
+    ui_str(8,y,buf,PBL_FG,1); y+=18;
     snprintf(buf,sizeof(buf),"Cell:     350mAh LW303040");
-    ui_str(8,y,buf,COLOR_GRAY,1); y+=22;
+    ui_str(8,y,buf,PBL_DIM,1); y+=22;
     snprintf(buf,sizeof(buf),"NFC:      %s",s_nfc_armed?"Armed":"Disarmed");
-    ui_str(8,y,buf,s_nfc_armed?COLOR_SOL_GRN:COLOR_RED,1); y+=18;
+    ui_str(8,y,buf,s_nfc_armed?PBL_FG:PBL_DIM,1); y+=18;
     snprintf(buf,sizeof(buf),"Wallet:   %s",wallet_name());
-    ui_str(8,y,buf,COLOR_SOL_PUR,1); y+=18;
+    ui_str(8,y,buf,PBL_FG,1); y+=18;
     snprintf(buf,sizeof(buf),"Heap:     %u B",(unsigned)esp_get_free_heap_size());
-    ui_str(8,y,buf,COLOR_GRAY,1); y+=18;
-    ui_str(8,y,"SolWearOS v1.0",COLOR_GRAY,1);
+    ui_str(8,y,buf,PBL_DIM,1); y+=18;
+    ui_str(8,y,"SolWearOS v1.1-pv2",PBL_DIM,1);
 }
 
 static int8_t s_games_sel=0;
@@ -511,42 +759,44 @@ static void render_games_menu(void)
     st7789_fb_fill(COLOR_BLACK); draw_status("Games");
     for(int i=0;i<3;i++){
         int y=STATUS_BAR_H+20+i*64;
-        ui_rounded_rect(20,y,200,54,8,(s_games_sel==i)?COLOR_SOL_PUR:COLOR_DARKBG);
-        if(s_games_sel==i) ui_select_box(20,y,200,54,COLOR_SOL_GRN);
+        uint16_t bg=(s_games_sel==i)?PBL_FG:PBL_BG;
+        uint16_t fg=(s_games_sel==i)?PBL_BG:PBL_FG;
+        st7789_fb_rect(20,y,200,54,bg);
+        st7789_fb_rect_outline(20,y,200,54,(s_games_sel==i)?PBL_FG:PBL_LINE);
         int tw=ui_str_width(s_game_names[i],2);
-        ui_str(120-tw/2,y+19,s_game_names[i],COLOR_WHITE,2);
+        ui_str(120-tw/2,y+19,s_game_names[i],fg,2);
     }
-    ui_str_center(LCD_H-12,"K1/K2=select  K3=play  K4=back",COLOR_GRAY,1);
+    ui_str_center(LCD_H-12,"K1/K2 select  K3 play  K4 back",PBL_DIM,1);
 }
 
 static void render_pong(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
     if(pp.over){
-        ui_str_center(90,(pp.sp>=5)?"YOU WIN!":"AI WINS",(pp.sp>=5)?COLOR_SOL_GRN:COLOR_RED,3);
-        ui_str_center(142,"K3=again  K4=back",COLOR_GRAY,2);
+        ui_str_center(90,(pp.sp>=5)?"YOU WIN":"AI WINS",PBL_FG,3);
+        ui_str_center(142,"K3 again  K4 back",PBL_DIM,2);
         return;
     }
-    for(int y=COURT_Y;y<LCD_H;y+=8) st7789_fb_pixel(LCD_W/2,y,COLOR_DARKBG);
-    st7789_fb_rect(PAD_W+2,pp.py,PAD_W,PAD_H,COLOR_SOL_GRN);
-    st7789_fb_rect(LCD_W-PAD_W*2-4,(int16_t)pp.ay,PAD_W,PAD_H,COLOR_RED);
-    st7789_fb_circle_fill((int16_t)pp.bx,(int16_t)pp.by,BALL_R,COLOR_WHITE);
+    for(int y=COURT_Y;y<LCD_H;y+=8) st7789_fb_pixel(LCD_W/2,y,PBL_LINE);
+    st7789_fb_rect(PAD_W+2,pp.py,PAD_W,PAD_H,PBL_FG);
+    st7789_fb_rect(LCD_W-PAD_W*2-4,(int16_t)pp.ay,PAD_W,PAD_H,PBL_DIM);
+    st7789_fb_circle_fill((int16_t)pp.bx,(int16_t)pp.by,BALL_R,PBL_FG);
     char sc[16]; snprintf(sc,sizeof(sc),"%d  %d",pp.sp,pp.sa);
-    ui_str_center(COURT_Y+4,sc,COLOR_LTGRAY,2);
-    if(pp.paused) ui_str_center(LCD_H/2,"PAUSED",COLOR_ORANGE,2);
+    ui_str_center(COURT_Y+4,sc,PBL_DIM,2);
+    if(pp.paused) ui_str_center(LCD_H/2,"PAUSED",PBL_FG,2);
 }
 
 static void render_tetris(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
     if(tet.over){
-        ui_str_center(80,"GAME OVER",COLOR_RED,3);
+        ui_str_center(80,"GAME OVER",PBL_FG,3);
         char sc[20]; snprintf(sc,sizeof(sc),"Score: %lu",(unsigned long)tet.score);
-        ui_str_center(122,sc,COLOR_WHITE,2);
-        ui_str_center(155,"K3=again  K4=back",COLOR_GRAY,1);
+        ui_str_center(122,sc,PBL_FG,2);
+        ui_str_center(155,"K3 again  K4 back",PBL_DIM,1);
         return;
     }
-    st7789_fb_rect_outline(TBX-1,TBY-1,TC*TCW+2,TR*TCH+2,COLOR_DARKBG);
+    st7789_fb_rect_outline(TBX-1,TBY-1,TC*TCW+2,TR*TCH+2,PBL_LINE);
     for(int r=0;r<TR;r++) for(int c=0;c<TC;c++)
         if(tet.b[r][c]) st7789_fb_rect(TBX+c*TCW+1,TBY+r*TCH+1,TCW-2,TCH-2,kTC[tet.b[r][c]-1]);
     for(int c=0;c<4;c++){
@@ -556,39 +806,39 @@ static void render_tetris(void)
     }
     int sx=TBX+TC*TCW+6;
     char sc[12]; snprintf(sc,sizeof(sc),"%lu",(unsigned long)tet.score);
-    ui_str(sx,TBY+8,"SC",COLOR_GRAY,1); ui_str(sx,TBY+18,sc,COLOR_SOL_GRN,1);
+    ui_str(sx,TBY+8,"SC",PBL_DIM,1); ui_str(sx,TBY+18,sc,PBL_FG,1);
     char lv[4]; snprintf(lv,sizeof(lv),"%u",tet.level);
-    ui_str(sx,TBY+38,"LV",COLOR_GRAY,1); ui_str(sx,TBY+48,lv,COLOR_CYAN,1);
-    ui_str(sx,TBY+68,"K4",COLOR_GRAY,1); ui_str(sx,TBY+78,"drop",COLOR_GRAY,1);
+    ui_str(sx,TBY+38,"LV",PBL_DIM,1); ui_str(sx,TBY+48,lv,PBL_FG,1);
+    ui_str(sx,TBY+68,"K4",PBL_DIM,1); ui_str(sx,TBY+78,"drop",PBL_DIM,1);
 }
 
 static void draw_tama_pet(int cx,int cy)
 {
     if(!tama.alive){
-        ui_rounded_rect(cx-16,cy-28,32,44,6,COLOR_DARKBG);
-        ui_str_center(cy-10,"RIP",COLOR_GRAY,2); return;
+        st7789_fb_rect_outline(cx-16,cy-28,32,44,PBL_LINE);
+        ui_str_center(cy-10,"RIP",PBL_DIM,2); return;
     }
-    uint16_t bc=(tama.hunger<20||tama.happy<20||tama.energy<20)?COLOR_ORANGE:COLOR_SOL_PUR;
+    uint16_t bc=(tama.hunger<20||tama.happy<20||tama.energy<20)?PBL_DIM:PBL_FG;
     st7789_fb_circle_fill(cx,cy,22,bc);
     if(tama_frame==0){
-        st7789_fb_circle_fill(cx-8,cy-6,4,COLOR_BLACK);
-        st7789_fb_circle_fill(cx+8,cy-6,4,COLOR_BLACK);
-        st7789_fb_circle_fill(cx-7,cy-7,2,COLOR_WHITE);
-        st7789_fb_circle_fill(cx+9,cy-7,2,COLOR_WHITE);
+        st7789_fb_circle_fill(cx-8,cy-6,4,PBL_BG);
+        st7789_fb_circle_fill(cx+8,cy-6,4,PBL_BG);
+        st7789_fb_circle_fill(cx-7,cy-7,2,PBL_FG);
+        st7789_fb_circle_fill(cx+9,cy-7,2,PBL_FG);
     } else {
-        st7789_fb_hline(cx-12,cy-6,8,COLOR_BLACK);
-        st7789_fb_hline(cx+4, cy-6,8,COLOR_BLACK);
+        st7789_fb_hline(cx-12,cy-6,8,PBL_BG);
+        st7789_fb_hline(cx+4, cy-6,8,PBL_BG);
     }
-    if(tama.happy>=50){ for(int i=-5;i<=5;i++) st7789_fb_pixel(cx+i,cy+9+(i*i)/8,COLOR_BLACK); }
-    else              { for(int i=-5;i<=5;i++) st7789_fb_pixel(cx+i,cy+12-(i*i)/8,COLOR_BLACK); }
+    if(tama.happy>=50){ for(int i=-5;i<=5;i++) st7789_fb_pixel(cx+i,cy+9+(i*i)/8,PBL_BG); }
+    else              { for(int i=-5;i<=5;i++) st7789_fb_pixel(cx+i,cy+12-(i*i)/8,PBL_BG); }
     int fy=cy+20+(tama_frame?2:0);
     st7789_fb_circle_fill(cx-14,fy,6,bc); st7789_fb_circle_fill(cx+14,fy,6,bc);
 }
 
 static void draw_tama_bar(int x,int y,const char*lbl,uint8_t v){
-    ui_str(x,y,lbl,COLOR_GRAY,1);
-    st7789_fb_rect(x+20,y+1,60,6,COLOR_DARKBG);
-    uint16_t c=(v>50)?COLOR_SOL_GRN:(v>25)?COLOR_ORANGE:COLOR_RED;
+    ui_str(x,y,lbl,PBL_DIM,1);
+    st7789_fb_rect_outline(x+20,y+1,60,6,PBL_LINE);
+    uint16_t c=(v>50)?PBL_FG:PBL_DIM;
     st7789_fb_rect(x+20,y+1,60*v/100,6,c);
 }
 
@@ -596,82 +846,64 @@ static void render_tamagotchi(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status("Tamagotchi");
     if(!tama.alive){
-        ui_str_center(60,"Your pet died!",COLOR_RED,2);
+        ui_str_center(60,"Your pet died",PBL_FG,2);
         draw_tama_pet(LCD_W/2,130);
-        ui_str_center(175,"K3=Resurrect",COLOR_GRAY,2);
+        ui_str_center(175,"K3 Resurrect",PBL_DIM,2);
         return;
     }
     draw_tama_pet(LCD_W/2,112);
     draw_tama_bar(10,168,"H:",tama.hunger);
     draw_tama_bar(10,182,"J:",tama.happy);
     draw_tama_bar(10,196,"E:",tama.energy);
-    if(tama_msg_on) ui_str_center(152,tama_msg,COLOR_SOL_GRN,2);
-    ui_str_center(LCD_H-12,"K1=Feed K2=Play K3=Nap",COLOR_GRAY,1);
-}
-
-static uint32_t s_charge_anim=0;
-static void render_charging(void)
-{
-    st7789_fb_fill(COLOR_BLACK);
-    ui_str_center(20,"Charging",COLOR_SOL_GRN,2);
-    int bx=LCD_W/2-38,by=50,bw=76,bh=130;
-    ui_rounded_rect(LCD_W/2-14,by-8,28,10,2,COLOR_WHITE);
-    ui_rounded_rect_outline(bx,by,bw,bh,6,COLOR_WHITE);
-    uint8_t pct=hal_battery_percent();
-    float vis=pct/100.f+(1.f-pct/100.f)*(0.5f+0.5f*sinf(s_charge_anim*0.003f));
-    if(vis>1.f)vis=1.f;
-    int fh=(int)((bh-8)*vis);
-    uint16_t fc=(pct>30)?COLOR_SOL_GRN:(pct>15)?COLOR_YELLOW:COLOR_RED;
-    st7789_fb_rect(bx+4,by+bh-4-fh,bw-8,fh,fc);
-    ui_fill_triangle(LCD_W/2,by+35,LCD_W/2-10,by+75,LCD_W/2+2,by+75,COLOR_WHITE);
-    ui_fill_triangle(LCD_W/2-2,by+75,LCD_W/2+10,by+75,LCD_W/2,by+115,COLOR_WHITE);
-    char ps[8]; snprintf(ps,sizeof(ps),"%d%%",pct);
-    ui_str_center(by+bh+14,ps,COLOR_WHITE,2);
-    char vs[12]; snprintf(vs,sizeof(vs),"%.2fV",hal_battery_mv()/1000.f);
-    ui_str_center(by+bh+34,vs,COLOR_SOL_GRN,1);
+    if(tama_msg_on) ui_str_center(152,tama_msg,PBL_FG,2);
+    ui_str_center(LCD_H-12,"K1 Feed K2 Play K3 Nap",PBL_DIM,1);
 }
 
 static void render_tx_overlay(void)
 {
     // dim bg
-    for(int y=18;y<LCD_H-18;y+=2) for(int x=0;x<LCD_W;x+=2) st7789_fb_pixel(x,y,COLOR_BLACK);
-    uint16_t border=(s_tx_state==TX_CONFIRM2)?COLOR_SOL_PUR:COLOR_ORANGE;
-    ui_rounded_rect(8,20,LCD_W-16,LCD_H-40,10,COLOR_DARKBG);
-    ui_rounded_rect_outline(8,20,LCD_W-16,LCD_H-40,10,border);
+    for(int y=18;y<LCD_H-18;y+=2) for(int x=0;x<LCD_W;x+=2) st7789_fb_pixel(x,y,PBL_BG);
+    uint16_t border=PBL_FG;
+    st7789_fb_rect(8,20,LCD_W-16,LCD_H-40,PBL_BG);
+    st7789_fb_rect_outline(8,20,LCD_W-16,LCD_H-40,border);
 
     if(s_tx_state==TX_SHOW){
-        ui_str_center(30,"TRANSACTION",COLOR_ORANGE,2);
-        char fr[14],to[14];
-        snprintf(fr,sizeof(fr),"%.8s...",g_nfc_tx.from);
-        snprintf(to,sizeof(to),"%.8s...",g_nfc_tx.to);
+        ui_str_center(30,"VERIFY REQUEST",PBL_FG,2);
+        char fr[18],to[18];
+        short_text(g_nfc_tx.from, fr, sizeof(fr));
+        short_text(g_nfc_tx.to, to, sizeof(to));
         float sol=(float)(g_nfc_tx.lamports/1000000000ULL)+(float)(g_nfc_tx.lamports%1000000000ULL)/1e9f;
-        char amt[20]; snprintf(amt,sizeof(amt),"%.4f SOL",(double)sol);
-        ui_str(16,58,"From:",COLOR_GRAY,1); ui_str(56,58,fr,COLOR_WHITE,1);
-        ui_str(16,74,"To:",  COLOR_GRAY,1); ui_str(56,74,to,COLOR_WHITE,1);
-        int tw=ui_str_width(amt,2); ui_str(LCD_W/2-tw/2,96,amt,COLOR_WHITE,2);
-        ui_rounded_rect(14,138,96,34,6,COLOR_SOL_GRN);
-        int t1w=ui_str_width("K3 Confirm",1);
-        ui_str(14+(96-t1w)/2,149,"K3 Confirm",COLOR_BLACK,1);
-        ui_rounded_rect(118,138,96,34,6,COLOR_RED);
+        char amt[20]; snprintf(amt,sizeof(amt),g_nfc_tx.lamports?"%.4f SOL":"TX REQUEST",(double)sol);
+        ui_str(16,55,"From",PBL_DIM,1); ui_str(70,55,fr,PBL_FG,1);
+        ui_str(16,72,"To",  PBL_DIM,1); ui_str(70,72,to,PBL_FG,1);
+        int tw=ui_str_width(amt,2); ui_str(LCD_W/2-tw/2,96,amt,PBL_FG,2);
+        char net[32]; snprintf(net,sizeof(net),"%s  fee %.6f",g_nfc_tx.network[0]?g_nfc_tx.network:"devnet",
+                               (double)g_nfc_tx.fee_lamports/1000000000.0);
+        ui_str_center(120,net,PBL_DIM,1);
+        st7789_fb_rect(14,145,96,34,PBL_FG);
+        int t1w=ui_str_width("K3 Review",1);
+        ui_str(14+(96-t1w)/2,156,"K3 Review",PBL_BG,1);
+        st7789_fb_rect_outline(118,145,96,34,PBL_FG);
         int t2w=ui_str_width("K4 Reject",1);
-        ui_str(118+(96-t2w)/2,149,"K4 Reject",COLOR_WHITE,1);
+        ui_str(118+(96-t2w)/2,156,"K4 Reject",PBL_FG,1);
     } else if(s_tx_state==TX_TIMER){
-        ui_str_center(38,"Are you sure?",COLOR_ORANGE,2);
+        ui_str_center(38,"CHECK DETAILS",PBL_FG,2);
         uint32_t rem=(TX_CONFIRM_TIMER_MS-s_tx_timer+999)/1000;
         char sc[8]; snprintf(sc,sizeof(sc),"%u",(unsigned)rem);
-        int tw=ui_str_width(sc,4); ui_str(LCD_W/2-tw/2,82,sc,COLOR_WHITE,4);
-        ui_str_center(140,"seconds",COLOR_GRAY,1);
+        int tw=ui_str_width(sc,4); ui_str(LCD_W/2-tw/2,82,sc,PBL_FG,4);
+        ui_str_center(140,"seconds to final sign",PBL_DIM,1);
         int bw2=(int)((LCD_W-32)*(uint64_t)s_tx_timer/TX_CONFIRM_TIMER_MS);
-        st7789_fb_rect(16,152,LCD_W-32,8,COLOR_DARKBG);
-        st7789_fb_rect(16,152,bw2,8,COLOR_ORANGE);
-        ui_str_center(170,"K4 to cancel",COLOR_GRAY,1);
+        st7789_fb_rect_outline(16,152,LCD_W-32,8,PBL_LINE);
+        st7789_fb_rect(16,152,bw2,8,PBL_FG);
+        ui_str_center(170,"K4 to cancel",PBL_DIM,1);
     } else {
-        ui_str_center(50,"SIGN?",COLOR_SOL_PUR,3);
-        ui_str_center(96,"Press K3 to sign",COLOR_WHITE,2);
-        ui_rounded_rect(20,128,88,34,6,COLOR_SOL_PUR);
-        int t1w=ui_str_width("K3 Sign",1); ui_str(20+(88-t1w)/2,139,"K3 Sign",COLOR_WHITE,1);
-        ui_rounded_rect(116,128,88,34,6,COLOR_DARKBG);
-        int t2w=ui_str_width("K4 Cancel",1); ui_str(116+(88-t2w)/2,139,"K4 Cancel",COLOR_GRAY,1);
+        ui_str_center(42,"TRUSTED SIGN",PBL_FG,2);
+        ui_str_center(78,"SolWear will sign",PBL_FG,1);
+        ui_str_center(96,"only this request",PBL_DIM,1);
+        st7789_fb_rect(20,128,88,34,PBL_FG);
+        int t1w=ui_str_width("K3 Sign",1); ui_str(20+(88-t1w)/2,139,"K3 Sign",PBL_BG,1);
+        st7789_fb_rect_outline(116,128,88,34,PBL_FG);
+        int t2w=ui_str_width("K4 Cancel",1); ui_str(116+(88-t2w)/2,139,"K4 Cancel",PBL_DIM,1);
     }
 }
 
@@ -690,7 +922,6 @@ static void handle_ob(btn_event_t ev)
             if(ev==BTN_K3_PRESS){
                 if(s_ob_sel==0){
                     esp_fill_random(s_ob_seed,32);
-                    uint8_t pub[32]={};
                     // pub derivation stubbed until Ed25519 complete
                     snprintf(s_ob_pub4,sizeof(s_ob_pub4),"%02X%02X%02X%02X",
                              s_ob_seed[0],s_ob_seed[1],s_ob_seed[2],s_ob_seed[3]);
@@ -702,8 +933,8 @@ static void handle_ob(btn_event_t ev)
             if(ev==BTN_K1_PRESS) s_ob_sel=0;
             if(ev==BTN_K2_PRESS) s_ob_sel=1;
             if(ev==BTN_K3_PRESS){
-                if(s_ob_sel==0) ob_go(OB_IMPORT_NFC);
-                else { roulette_init(&s_roulette,ROULETTE_MODE_HEX,64,64,false,70); ob_go(OB_IMPORT_HEX); }
+                if(s_ob_sel==0) { roulette_init(&s_roulette,ROULETTE_MODE_HEX,64,64,false,70); ob_go(OB_IMPORT_HEX); }
+                else ob_go(OB_CHOICE);
             }
             if(ev==BTN_K4_PRESS) ob_go(OB_CHOICE);
             break;
@@ -756,6 +987,7 @@ static void handle_ob(btn_event_t ev)
                 strncpy(s_ob_name,s_roulette.buf,sizeof(s_ob_name)-1);
                 wallet_import_seed(s_ob_seed,s_ob_pass,s_ob_name);
                 wallet_load_public();
+                hal_nfc_set_wallet_pubkey(wallet_pubkey());
                 memset(s_ob_seed,0,32); memset(s_ob_pass,0,sizeof(s_ob_pass));
                 ob_go(OB_DONE);
             } else if(r==ROULETTE_CANCELLED) ob_go(OB_PASS_WARN);
@@ -791,7 +1023,12 @@ static void handle_tx(btn_event_t ev)
             uint8_t sig[64]={};
             if(wallet_is_unlocked()){
                 wallet_sign(g_nfc_tx.tx_bytes,g_nfc_tx.tx_len,sig);
-                hal_nfc_write_sign_response(sig,g_nfc_tx.nonce);
+                if(!hal_nfc_set_sign_response_target(sig,g_nfc_tx.nonce)){
+                    memcpy(s_pending_sig,sig,sizeof(s_pending_sig));
+                    strncpy(s_pending_sig_nonce,g_nfc_tx.nonce,sizeof(s_pending_sig_nonce)-1);
+                    s_pending_sig_nonce[sizeof(s_pending_sig_nonce)-1]='\0';
+                    s_pending_sig_valid=true;
+                }
                 char line[80]; float sol=(float)(g_nfc_tx.lamports/1000000000ULL)+(float)(g_nfc_tx.lamports%1000000000ULL)/1e9f;
                 snprintf(line,sizeof(line),"-%.4f SOL to %.8s...",(double)sol,g_nfc_tx.to);
                 save_receipt(line); load_receipts();
@@ -807,7 +1044,12 @@ static void handle_button(btn_event_t ev)
     // Global double/triple
     if(ev==BTN_K4_DOUBLE){ s_tx_overlay=false; g_nfc_tx.valid=false; s_screen=SCR_HOME; s_slide=SLIDE_WATCHFACE; return; }
     if(ev==BTN_K4_TRIPLE){ wallet_lock(); s_tx_overlay=false; roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); s_lock_err[0]='\0'; s_screen=SCR_LOCK; return; }
-    if(ev==BTN_K1_DOUBLE){ s_nfc_armed=!s_nfc_armed; if(s_nfc_armed)hal_nfc_ensure_init(); else hal_nfc_shutdown(); s_nfc_widget_ms=2000; s_nfc_widget_armed=s_nfc_armed; return; }
+    if(ev==BTN_K1_DOUBLE){
+        s_nfc_armed=!s_nfc_armed;
+        hal_nfc_set_service_enabled(s_nfc_armed);
+        if(s_nfc_armed)hal_nfc_ensure_init(); else hal_nfc_shutdown();
+        s_nfc_widget_ms=2000; s_nfc_widget_armed=s_nfc_armed; return;
+    }
 
     if(s_tx_overlay){ handle_tx(ev); return; }
 
@@ -815,13 +1057,15 @@ static void handle_button(btn_event_t ev)
         case SCR_ONBOARD: handle_ob(ev); break;
         case SCR_LOCK:    handle_lock(ev); break;
         case SCR_HOME:
-            if(ev==BTN_K2_PRESS){ if(s_slide==SLIDE_WATCHFACE){s_slide=SLIDE_GRID;s_grid_sel=0;} else if(s_grid_sel<3) s_grid_sel++; }
-            if(ev==BTN_K1_PRESS){ if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+2)%3; else if(s_grid_sel>0) s_grid_sel--; else s_slide=SLIDE_WATCHFACE; }
+            if(ev==BTN_K2_PRESS){ if(s_slide==SLIDE_WATCHFACE){s_slide=SLIDE_GRID;s_grid_sel=0;} else if(s_grid_sel<GRID_APP_COUNT-1) s_grid_sel++; }
+            if(ev==BTN_K1_PRESS){ if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+WATCHFACE_COUNT-1)%WATCHFACE_COUNT; else if(s_grid_sel>0) s_grid_sel--; else s_slide=SLIDE_WATCHFACE; }
             if(ev==BTN_K3_PRESS){
-                if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+1)%3;
+                if(s_slide==SLIDE_WATCHFACE) s_watchface=(s_watchface+1)%WATCHFACE_COUNT;
                 else {
-                    const screen_id_t t[]={SCR_SETTINGS,SCR_TRANSACTIONS,SCR_STATS,SCR_GAMES_MENU};
+                    const screen_id_t t[GRID_APP_COUNT]={SCR_WALLET,SCR_RECEIVE,SCR_TRANSACTIONS,SCR_STATS,SCR_GAMES_MENU,SCR_SETTINGS,SCR_LOCK};
                     s_screen=t[s_grid_sel];
+                    if(s_screen==SCR_LOCK){ wallet_lock(); roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); }
+                    if(s_screen==SCR_WALLET) load_receipts();
                     if(s_screen==SCR_TRANSACTIONS) load_receipts();
                     if(s_screen==SCR_GAMES_MENU) s_games_sel=0;
                 }
@@ -831,7 +1075,13 @@ static void handle_button(btn_event_t ev)
         case SCR_SETTINGS:
             if(ev==BTN_K1_PRESS&&s_settings_sel>0) s_settings_sel--;
             if(ev==BTN_K2_PRESS&&s_settings_sel<SETTINGS_COUNT-1) s_settings_sel++;
-            if(ev==BTN_K3_PRESS&&s_settings_sel<3) s_watchface=(uint8_t)s_settings_sel;
+            if(ev==BTN_K3_PRESS&&s_settings_sel<WATCHFACE_COUNT) s_watchface=(uint8_t)s_settings_sel;
+            if(ev==BTN_K4_PRESS) s_screen=SCR_HOME;
+            break;
+        case SCR_WALLET:
+            if(ev==BTN_K4_PRESS) s_screen=SCR_HOME;
+            break;
+        case SCR_RECEIVE:
             if(ev==BTN_K4_PRESS) s_screen=SCR_HOME;
             break;
         case SCR_TRANSACTIONS:
@@ -888,7 +1138,6 @@ static void handle_button(btn_event_t ev)
             }
             if(ev==BTN_K4_PRESS){tama_save();s_screen=SCR_GAMES_MENU;}
             break;
-        case SCR_CHARGING: break;
     }
 }
 
@@ -897,7 +1146,7 @@ static void handle_button(btn_event_t ev)
 // ============================================================
 void app_main(void)
 {
-    ESP_LOGI(TAG,"=== SolWearOS v1.0 ===");
+    ESP_LOGI(TAG,"=== SolWearOS v1.1-pv2 ===");
 
     // Display first — always shows something on screen
     ESP_ERROR_CHECK(st7789_init());
@@ -915,45 +1164,64 @@ void app_main(void)
 
     hal_battery_init(); hal_battery_update();
     hal_nfc_init();
+    if (s_nfc_armed && !hal_nfc_ensure_init()) {
+        ESP_LOGW(TAG, "NFC init will retry in background");
+    }
     wallet_load_public();
+    if(wallet_is_onboarded()) hal_nfc_set_wallet_pubkey(wallet_pubkey());
+    else hal_nfc_set_wallet_pubkey(NULL);
+    hal_nfc_set_service_enabled(s_nfc_armed);
+    load_receipts();
 
     if(!wallet_is_onboarded()){ s_screen=SCR_ONBOARD; s_ob=OB_WELCOME; }
     else { roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); s_screen=SCR_LOCK; }
-    if(hal_battery_charging()) s_screen=SCR_CHARGING;
-
     s_btn_q=xQueueCreate(16,sizeof(btn_event_t));
     hal_buttons_init(on_button);
 
     ESP_LOGI(TAG,"Boot complete");
     uint32_t last=xTaskGetTickCount()*portTICK_PERIOD_MS;
+    uint32_t render_accum=0;
 
     while(1){
         uint32_t now=xTaskGetTickCount()*portTICK_PERIOD_MS;
         uint32_t dt=now-last; last=now;
+        bool force_render=false;
+        render_accum+=dt;
 
         // Timers
-        s_anim+=dt; s_charge_anim+=dt;
+        s_anim+=dt;
         if(s_nfc_widget_ms>dt) s_nfc_widget_ms-=dt; else s_nfc_widget_ms=0;
+        if(s_sync_widget_ms>dt) s_sync_widget_ms-=dt; else s_sync_widget_ms=0;
+        if(g_nfc_sync.counter!=s_sync_seen_counter){
+            s_sync_seen_counter=g_nfc_sync.counter;
+            s_sync_widget_ms=2400;
+            force_render=true;
+        }
         tama_anim+=dt; if(tama_anim>=500){tama_anim=0;tama_frame^=1;}
         if(tama_msg_on){tama_msg_t+=dt; if(tama_msg_t>=1500)tama_msg_on=false;}
 
         // Clock
         static uint32_t clk=0; clk+=dt;
-        if(clk>=1000){clk-=1000; if(++s_s>=60){s_s=0;if(++s_m>=60){s_m=0;if(++s_h>=24)s_h=0;}}}
+        if(clk>=1000){clk-=1000; force_render=true; if(++s_s>=60){s_s=0;if(++s_m>=60){s_m=0;if(++s_h>=24)s_h=0;}}}
 
         // Battery
         static uint32_t bat=0; bat+=dt;
-        if(bat>=30000){bat=0;hal_battery_update();
-            if(hal_battery_charging()&&s_screen!=SCR_CHARGING) s_screen=SCR_CHARGING;
-            if(!hal_battery_charging()&&s_screen==SCR_CHARGING) s_screen=SCR_HOME;}
+        if(bat>=30000){bat=0;hal_battery_update();force_render=true;}
+
+        // NFC is armed by default; keep trying if PN532 was not ready at boot.
+        static uint32_t nfc_retry=0; nfc_retry+=dt;
+        if(s_nfc_armed&&!hal_nfc_is_ready()&&nfc_retry>=1000){
+            nfc_retry=0;
+            hal_nfc_ensure_init();
+        }
 
         // TX timer
         if(s_tx_overlay&&s_tx_state==TX_TIMER){
-            s_tx_timer+=dt; if(s_tx_timer>=TX_CONFIRM_TIMER_MS) s_tx_state=TX_CONFIRM2;}
+            s_tx_timer+=dt; if(s_tx_timer>=TX_CONFIRM_TIMER_MS){s_tx_state=TX_CONFIRM2;force_render=true;}}
 
         // New TX from NFC
         if(g_nfc_tx.valid&&!s_tx_overlay&&s_screen!=SCR_ONBOARD&&s_screen!=SCR_LOCK){
-            s_tx_overlay=true; s_tx_state=TX_SHOW; s_tx_timer=0;}
+            s_tx_overlay=true; s_tx_state=TX_SHOW; s_tx_timer=0; force_render=true;}
 
         // Game updates
         if(s_screen==SCR_TETRIS&&!tet.over){
@@ -962,25 +1230,38 @@ void app_main(void)
                 if(tet_fits(tet.px,tet.py+1,tet.rot))tet.py++; else tet_place();}}
         if(s_screen==SCR_PING_PONG) pp_update(dt);
 
-        // NFC poll: on tag tap, try to process NDEF (sign request) OR
-        // write wallet NDEF so Android can read pubkey
         if(s_nfc_armed&&hal_nfc_is_ready()){
-            nfc_tag_t tag;
-            if(hal_nfc_wait_tag(50,&tag)){
-                if(!hal_nfc_process_ndef()){
-                    // No sign_request on tag — write our wallet pubkey for Android to read
-                    hal_nfc_write_wallet_ndef(wallet_pubkey());
-                }
+            if(s_pending_sig_valid&&hal_nfc_set_sign_response_target(s_pending_sig,s_pending_sig_nonce)){
+                memset(s_pending_sig,0,sizeof(s_pending_sig));
+                memset(s_pending_sig_nonce,0,sizeof(s_pending_sig_nonce));
+                s_pending_sig_valid=false;
             }
         }
 
         // Buttons
         btn_event_t ev;
-        while(xQueueReceive(s_btn_q,&ev,0)==pdTRUE) handle_button(ev);
+        while(xQueueReceive(s_btn_q,&ev,0)==pdTRUE) { handle_button(ev); force_render=true; }
+
+        bool game_fast=(s_screen==SCR_PING_PONG);
+        bool active_render=game_fast
+            || s_screen==SCR_TETRIS
+            || s_screen==SCR_TAMAGOTCHI
+            || s_tx_overlay
+            || s_nfc_widget_ms>0
+            || s_sync_widget_ms>0
+            || (s_screen==SCR_HOME && s_slide==SLIDE_GRID);
+        uint32_t render_period=game_fast ? FRAME_MS : (active_render ? 66 : 250);
+        if(!force_render && render_accum<render_period){
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+        render_accum=0;
 
         // Render
         switch(s_screen){
             case SCR_HOME:         render_home();         break;
+            case SCR_WALLET:       render_wallet_app();   break;
+            case SCR_RECEIVE:      render_receive_app();  break;
             case SCR_ONBOARD:      render_onboard();      break;
             case SCR_LOCK:         render_lock();         break;
             case SCR_SETTINGS:     render_settings();     break;
@@ -990,10 +1271,10 @@ void app_main(void)
             case SCR_PING_PONG:    render_pong();         break;
             case SCR_TETRIS:       render_tetris();       break;
             case SCR_TAMAGOTCHI:   render_tamagotchi();   break;
-            case SCR_CHARGING:     render_charging();     break;
         }
         if(s_tx_overlay) render_tx_overlay();
         if(s_nfc_widget_ms>0) ui_nfc_widget(s_nfc_widget_armed);
+        render_sync_effect();
 
         st7789_flush();
 
