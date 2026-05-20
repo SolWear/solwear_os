@@ -299,7 +299,7 @@ static void on_button(btn_event_t ev){ xQueueSend(s_btn_q, &ev, 0); }
 #define PBL_LINE    RGB565(0x3A,0x3A,0x3A)
 #define PBL_PANEL   RGB565(0x10,0x10,0x10)
 #define SOLWEAR_OS_VERSION "SolWearOS v1.2-pv2"
-#define UI_TRANSITION_MS 180
+#define UI_TRANSITION_MS 140
 
 static uint32_t s_ui_transition_ms=0;
 static int8_t s_ui_transition_dir=1;
@@ -382,11 +382,12 @@ static void draw_star(int x, int y, uint16_t c)
 static void draw_cloud_raw(int x, int y, int w, uint16_t c)
 {
     int h=w/4;
-    st7789_fb_hline(x+4,y+h,w-8,c);
-    st7789_fb_circle(x+w/5,y+h-2,h/2,c);
-    st7789_fb_circle(x+w/2,y+h-7,h*2/3,c);
-    st7789_fb_circle(x+w*3/4,y+h-3,h/2,c);
-    st7789_fb_hline(x+w/5,y+h+5,w*3/5,c);
+    int cx1=x+w/5, cx2=x+w/2, cx3=x+w*3/4;
+    int r1=h/2, r2=h*2/3;
+    st7789_fb_circle_fill(cx1, y+h,   r1, c);
+    st7789_fb_circle_fill(cx2, y+h-5, r2, c);
+    st7789_fb_circle_fill(cx3, y+h,   r1, c);
+    st7789_fb_rect(cx1-r1, y+h, cx3+r1-(cx1-r1), r1+2, c);
 }
 
 static void draw_cloud_wrap(int x, int y, int w, uint16_t c)
@@ -409,55 +410,89 @@ static void draw_moon_scene(int cx, int cy)
 
 static void draw_night_sky(void)
 {
-    for(int i=0;i<28;i++){
-        int drift=(int)(s_anim/(95+(i%5)*22));
-        int x=(i*43+19-drift)%LCD_W;
-        if(x<0) x+=LCD_W;
-        int y=STATUS_BAR_H+10+((i*31+7)%(LCD_H-STATUS_BAR_H-68));
-        if((i%6)==0) y+=(int)(2.f*sinf((s_anim+i*120)*0.003f));
-        uint16_t c=(((s_anim/320)+i)%5)==0?PBL_FG:PBL_DIM;
-        if((i%5)==0) draw_star(x,y,c); else st7789_fb_pixel(x,y,c);
+    static const uint8_t STAR_X[48]={
+        12,220, 45,178, 93,231, 67,154,
+        23,198,118, 34,205, 88,147, 72,
+       189, 11,233, 56,167,103, 38,215,
+        79,142, 26,197, 62,183,108, 44,
+       221, 85,169,130, 51,208, 17,174,
+        96,138, 70,223, 31,159,114,  5};
+    static const uint8_t STAR_Y[48]={
+        42, 60, 35, 85,110, 75,130, 38,
+        95, 55,148, 50,100, 65,140, 62,
+       120, 80,155, 32, 90,115, 68,105,
+        45,160, 58, 88,132, 72, 48,125,
+        98,143, 34, 78,165,112, 70, 44,
+       150, 83,108, 52,138, 29,168, 92};
+
+    for(int i=0;i<48;i++){
+        int drift=(int)(s_anim/(80+(i%7)*18));
+        int x=(STAR_X[i]-(drift%LCD_W)+LCD_W)%LCD_W;
+        int y=STAR_Y[i];
+        if((i%5)==0) y+=(int)(1.5f*sinf((s_anim+i*200)*0.002f));
+
+        uint32_t phase=s_anim/200+i*37;
+        uint16_t c;
+        if(phase%17==0)            c=PBL_FG;
+        else if((phase/3)%11==0)   c=PBL_LINE;
+        else                        c=PBL_DIM;
+
+        if(i%7==0)       draw_star(x,y,c);
+        else if(i%3==0){ st7789_fb_pixel(x,y,c);
+                         st7789_fb_pixel(x-1,y,c);
+                         st7789_fb_pixel(x+1,y,c); }
+        else             st7789_fb_pixel(x,y,c);
     }
 
-    for(int k=0;k<2;k++){
-        uint32_t t=(s_anim+(uint32_t)k*1300)%3600;
-        if(t<900){
-            int x=214-(int)(t/5)-k*36;
-            int y=42+(int)(t/13)+k*26;
-            draw_line(x,y,x+20,y-9,PBL_FG);
-            draw_line(x+3,y+1,x+14,y-4,PBL_DIM);
-            st7789_fb_pixel(x,y,PBL_FG);
+    for(int k=0;k<3;k++){
+        uint32_t t=(s_anim+(uint32_t)k*1100)%4200;
+        if(t<1000){
+            int sx=220-(int)(t*18/100)-k*40;
+            int sy=36+(int)(t*11/100)+k*22;
+            draw_line(sx,    sy,   sx+28,sy-12,PBL_FG);
+            draw_line(sx+4,  sy+2, sx+20,sy-5, PBL_DIM);
+            draw_line(sx+8,  sy+3, sx+14,sy-2, PBL_LINE);
+            st7789_fb_pixel(sx,   sy,   PBL_FG);
+            st7789_fb_pixel(sx-1, sy,   PBL_FG);
+            st7789_fb_pixel(sx,   sy+1, PBL_FG);
         }
     }
 }
 
 static void draw_sunrise_scene(int cx, int cy)
 {
-    draw_cloud_wrap(32-(int)((s_anim/65)%336),42,58,PBL_DIM);
-    draw_cloud_wrap(154-(int)((s_anim/88)%336),64,72,PBL_LINE);
-    draw_cloud_wrap(246-(int)((s_anim/54)%336),86,50,PBL_DIM);
-
     int rise=(int)(4.f*sinf(s_anim*0.0018f));
-    int sx=cx;
-    int sy=cy-rise;
-    st7789_fb_circle(sx,sy,24,PBL_FG);
-    st7789_fb_circle(sx,sy,16,PBL_DIM);
-    st7789_fb_rect(38,sy+1,164,36,PBL_BG);
-    st7789_fb_hline(32,sy+1,176,PBL_FG);
-    st7789_fb_hline(58,sy+13,124,PBL_LINE);
-    st7789_fb_hline(82,sy+25,76,PBL_LINE);
+    int sx=cx, sy=cy-rise;
 
+    // Warm gradient sky above horizon
+    if(sy+1>STATUS_BAR_H)
+        ui_gradient_h(0,STATUS_BAR_H,LCD_W,sy+1-STATUS_BAR_H,
+                      COLOR_BLACK, rgb565(0x3C,0x12,0x00));
+
+    // Filled sun at horizon
+    st7789_fb_circle_fill(sx,sy,22,PBL_FG);
+    st7789_fb_circle_fill(sx,sy,12,rgb565(0x60,0x28,0x00));
+
+    // Horizon cut: erase lower sun half + below
+    st7789_fb_rect(0,sy+1,LCD_W,42,PBL_BG);
+
+    // Radial rays above horizon only
     int pulse=(s_anim/180)%9;
     for(int i=0;i<9;i++){
         float a=(-80.f+i*20.f)*3.14159f/180.f;
-        int inner=28+(i==pulse?2:0);
-        int outer=42+(i==pulse?5:0);
+        int inner=26+(i==pulse?2:0);
+        int outer=38+(i==pulse?5:0);
         int x1=sx+(int)(inner*sinf(a));
         int y1=sy-(int)(inner*cosf(a));
         int x2=sx+(int)(outer*sinf(a));
         int y2=sy-(int)(outer*cosf(a));
         if(y2<sy+4) draw_line(x1,y1,x2,y2,(i==pulse)?PBL_FG:PBL_DIM);
     }
+
+    // Filled clouds in front of sun (depth: front=white, mid=dim, back=dim)
+    draw_cloud_wrap(32-(int)((s_anim/65)%336),  sy-14, 58, PBL_FG);
+    draw_cloud_wrap(154-(int)((s_anim/88)%336), sy+2,  72, PBL_DIM);
+    draw_cloud_wrap(246-(int)((s_anim/54)%336), sy-6,  50, PBL_FG);
 }
 
 static void draw_app_icon(int icon, int cx, int cy, uint16_t c, uint16_t bg)
@@ -526,18 +561,22 @@ static void render_system_transition(void)
 {
     if(s_ui_transition_ms==0) return;
     uint32_t elapsed=UI_TRANSITION_MS-s_ui_transition_ms;
-    int edge=(int)((uint64_t)elapsed*LCD_W/UI_TRANSITION_MS);
+    // Quadratic ease-out: snappy start, smooth landing
+    float t=(float)elapsed/(float)UI_TRANSITION_MS;
+    float ease=1.f-(1.f-t)*(1.f-t);
+    int edge=(int)(ease*LCD_W);
     int x=(s_ui_transition_dir>0)?edge:(LCD_W-edge);
     if(x<0) x=0;
     if(x>=LCD_W) x=LCD_W-1;
 
+    // Crisp leading edge
     st7789_fb_vline(x,STATUS_BAR_H,LCD_H-STATUS_BAR_H,PBL_FG);
-    for(int i=1;i<=6;i++){
-        int xx=x-s_ui_transition_dir*i*8;
-        if(xx>=0&&xx<LCD_W) st7789_fb_vline(xx,STATUS_BAR_H,LCD_H-STATUS_BAR_H,(i&1)?PBL_DIM:PBL_LINE);
+    // Motion-blur shadow (3 trailing lines, gradient dim→line→panel)
+    const uint16_t shadow[3]={PBL_DIM,PBL_LINE,PBL_PANEL};
+    for(int i=0;i<3;i++){
+        int xx=x-s_ui_transition_dir*(i+1)*4;
+        if(xx>=0&&xx<LCD_W) st7789_fb_vline(xx,STATUS_BAR_H,LCD_H-STATUS_BAR_H,shadow[i]);
     }
-    int sweep=STATUS_BAR_H+(int)((uint64_t)elapsed*(LCD_H-STATUS_BAR_H)/UI_TRANSITION_MS);
-    if(sweep>=STATUS_BAR_H&&sweep<LCD_H) st7789_fb_hline(0,sweep,LCD_W,PBL_LINE);
 }
 
 // ============================================================
@@ -633,8 +672,8 @@ static void render_home_grid(void)
     }
     for(int i=0;i<GRID_PAGE_COUNT;i++){
         int dx=LCD_W/2-(GRID_PAGE_COUNT-1)*8+i*16;
-        if(i==page) st7789_fb_circle_fill(dx,LCD_H-20,3,PBL_FG);
-        else        st7789_fb_circle(dx,LCD_H-20,3,PBL_DIM);
+        if(i==page) ui_rounded_rect(dx-8,LCD_H-23,16,6,3,PBL_FG);
+        else        st7789_fb_circle_fill(dx,LCD_H-20,2,PBL_LINE);
     }
 }
 
@@ -644,11 +683,11 @@ static void render_home(void)
     draw_status(NULL);
     if(s_slide==SLIDE_WATCHFACE) render_watchface();
     else                          render_home_grid();
-    // Dots
+    // Pill indicator dots
     for(int i=0;i<SLIDE_COUNT;i++){
         int dx=LCD_W/2-(SLIDE_COUNT-1)*8+i*16;
-        if(i==s_slide) st7789_fb_circle_fill(dx,LCD_H-7,3,PBL_FG);
-        else            st7789_fb_circle(dx,LCD_H-7,3,PBL_DIM);
+        if(i==s_slide) ui_rounded_rect(dx-8,LCD_H-10,16,6,3,PBL_FG);
+        else           st7789_fb_circle_fill(dx,LCD_H-7,2,PBL_LINE);
     }
 }
 
@@ -734,9 +773,7 @@ static void render_lock(void)
 {
     st7789_fb_fill(COLOR_BLACK);
     draw_status("LOCK");
-    st7789_fb_rect(24,34,192,30,PBL_FG);
-    ui_str_center(43,"SOLWEAR WALLET",PBL_BG,2);
-    ui_str_center(68,"SPIN TO UNLOCK",PBL_DIM,1);
+    draw_app_icon(6,LCD_W/2,45,PBL_DIM,PBL_BG);
     roulette_render(&s_roulette);
     if(s_lock_err[0]) ui_str_center(LCD_H-16,s_lock_err,PBL_FG,1);
 }
