@@ -13,6 +13,7 @@
 #define DEBOUNCE_MS  20
 #define DOUBLE_MS    350
 #define TRIPLE_MS    600
+#define HOLD_MS      5000
 
 static btn_callback_t s_cb = NULL;
 
@@ -20,6 +21,7 @@ static btn_callback_t s_cb = NULL;
 typedef struct {
     bool     last_raw;
     bool     pressed;        // debounced state
+    bool     hold_sent;      // long hold already emitted for this press
     uint32_t press_time_ms;  // when it was pressed
 } btn_state_t;
 
@@ -36,6 +38,13 @@ static volatile btn_event_t s_pending = BTN_NONE;
 static uint32_t now_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+static void emit_event(btn_event_t ev)
+{
+    if (ev == BTN_NONE) return;
+    s_pending = ev;
+    if (s_cb) s_cb(ev);
 }
 
 static void process_press(int idx, uint32_t t)
@@ -82,10 +91,7 @@ static void process_press(int idx, uint32_t t)
             break;
     }
 
-    if (ev != BTN_NONE) {
-        s_pending = ev;
-        if (s_cb) s_cb(ev);
-    }
+    emit_event(ev);
 }
 
 static void btn_poll_task(void *arg)
@@ -99,9 +105,22 @@ static void btn_poll_task(void *arg)
             if (raw && !s_btn[i].last_raw) {
                 // Falling edge (press)
                 s_btn[i].press_time_ms = t;
+                s_btn[i].hold_sent = false;
+            } else if (raw && s_btn[i].last_raw) {
+                if (!s_btn[i].hold_sent && (i == 0 || i == 3) &&
+                    t - s_btn[i].press_time_ms >= HOLD_MS) {
+                    s_btn[i].hold_sent = true;
+                    if (i == 0) {
+                        s_k1_count = 0;
+                        emit_event(BTN_K1_HOLD);
+                    } else {
+                        s_k4_count = 0;
+                        emit_event(BTN_K4_HOLD);
+                    }
+                }
             } else if (!raw && s_btn[i].last_raw) {
                 // Rising edge (release) — confirm press after debounce
-                if (t - s_btn[i].press_time_ms >= DEBOUNCE_MS) {
+                if (!s_btn[i].hold_sent && t - s_btn[i].press_time_ms >= DEBOUNCE_MS) {
                     process_press(i, t);
                 }
             }

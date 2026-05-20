@@ -365,6 +365,53 @@ static void draw_meter(int x, int y, int w, int h, uint8_t pct, uint16_t c)
     if(fill>0) st7789_fb_rect(x+2,y+2,fill,h-4,c);
 }
 
+static void draw_star(int x, int y, uint16_t c)
+{
+    st7789_fb_pixel(x,y,c);
+    st7789_fb_pixel(x-1,y,c);
+    st7789_fb_pixel(x+1,y,c);
+    st7789_fb_pixel(x,y-1,c);
+    st7789_fb_pixel(x,y+1,c);
+}
+
+static void draw_moon_scene(int cx, int cy)
+{
+    int wobble=(int)(3.f*sinf(s_anim*0.0024f));
+    int phase=(s_anim/120)%34;
+    int shade=(phase<17)?phase:(34-phase);
+    int mx=cx+wobble;
+    int my=cy+(int)(2.f*cosf(s_anim*0.0017f));
+    st7789_fb_circle_fill(mx,my,20,PBL_FG);
+    st7789_fb_circle_fill(mx+7-shade,my-4,20,PBL_BG);
+    st7789_fb_circle(mx,my,20,PBL_FG);
+    st7789_fb_circle(mx,my,15,PBL_DIM);
+}
+
+static void draw_sunrise_scene(int cx, int cy)
+{
+    int rise=(int)(5.f*sinf(s_anim*0.0018f));
+    int sx=cx;
+    int sy=cy-rise;
+    st7789_fb_circle(sx,sy,21,PBL_FG);
+    st7789_fb_circle(sx,sy,15,PBL_DIM);
+    st7789_fb_rect(54,sy+2,132,30,PBL_BG);
+    st7789_fb_hline(44,sy+2,152,PBL_FG);
+    st7789_fb_hline(62,sy+12,116,PBL_LINE);
+    st7789_fb_hline(78,sy+22,84,PBL_LINE);
+
+    int pulse=(s_anim/220)%4;
+    for(int i=0;i<8;i++){
+        float a=(-70.f+i*20.f)*3.14159f/180.f;
+        int inner=28+(i==pulse?2:0);
+        int outer=42+(i==pulse?5:0);
+        int x1=sx+(int)(inner*sinf(a));
+        int y1=sy-(int)(inner*cosf(a));
+        int x2=sx+(int)(outer*sinf(a));
+        int y2=sy-(int)(outer*cosf(a));
+        if(y2<sy+4) draw_line(x1,y1,x2,y2,(i==pulse)?PBL_FG:PBL_DIM);
+    }
+}
+
 static void draw_app_icon(int icon, int cx, int cy, uint16_t c, uint16_t bg)
 {
     switch(icon){
@@ -436,26 +483,27 @@ static void render_watchface(void)
     uint8_t bat=hal_battery_percent();
 
     if(s_watchface==0){
-        ui_str_center(36,"GOOD MORNING",PBL_DIM,1);
-        ui_str_center(58,"GM",PBL_FG,4);
-        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,112,t,PBL_FG,3);
-        ui_str(LCD_W/2+tw/2+2,120,sec,PBL_DIM,1);
-        st7789_fb_hline(46,155,148,PBL_LINE);
-        ui_str(48,164,"TODAY",PBL_DIM,1);
-        ui_str_right(192,164,s_nfc_armed?"NFC READY":"NFC OFF",PBL_FG,1);
-        draw_meter(48,184,144,8,bat,PBL_FG);
+        ui_str_center(30,"GOOD MORNING",PBL_DIM,1);
+        draw_sunrise_scene(LCD_W/2,88);
+        ui_str(28,64,"GM",PBL_FG,3);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,118,t,PBL_FG,3);
+        ui_str(LCD_W/2+tw/2+2,126,sec,PBL_DIM,1);
+        st7789_fb_rect_outline(34,158,172,36,PBL_LINE);
+        ui_str(42,168,"TODAY",PBL_DIM,1);
+        ui_str_right(198,168,s_nfc_armed?"NFC READY":"NFC OFF",PBL_FG,1);
+        draw_meter(48,180,144,8,bat,PBL_FG);
     } else if(s_watchface==1){
         for(int i=0;i<18;i++){
             int x=(i*37+17)%LCD_W;
             int y=STATUS_BAR_H+12+((i*29+11)%(LCD_H-STATUS_BAR_H-48));
-            st7789_fb_pixel(x,y,(i%3)==0?PBL_FG:PBL_DIM);
+            uint16_t c=(((s_anim/260)+i)%4)==0?PBL_FG:PBL_DIM;
+            if((i%5)==0) draw_star(x,y,c); else st7789_fb_pixel(x,y,c);
         }
-        st7789_fb_circle(68,62,18,PBL_FG);
-        st7789_fb_circle_fill(75,58,18,PBL_BG);
-        ui_str_center(52,"GOOD NIGHT",PBL_DIM,1);
-        ui_str_center(78,"GN",PBL_FG,4);
+        ui_str_center(42,"GOOD NIGHT",PBL_DIM,1);
+        draw_moon_scene(67,74);
+        ui_str(118,64,"GN",PBL_FG,4);
         int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,134,t,PBL_FG,3);
-        ui_str_center(180,"K4x3 LOCKS WALLET",PBL_DIM,1);
+        ui_str_center(180,"HOLD K4 LOCKS",PBL_DIM,1);
         draw_meter(54,196,132,7,bat,PBL_FG);
     } else if(s_watchface==2){
         ui_str_center(40,"SOLWEAR",PBL_DIM,1);
@@ -1041,14 +1089,23 @@ static void handle_tx(btn_event_t ev)
 
 static void handle_button(btn_event_t ev)
 {
-    // Global double/triple
-    if(ev==BTN_K4_DOUBLE){ s_tx_overlay=false; g_nfc_tx.valid=false; s_screen=SCR_HOME; s_slide=SLIDE_WATCHFACE; return; }
-    if(ev==BTN_K4_TRIPLE){ wallet_lock(); s_tx_overlay=false; roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); s_lock_err[0]='\0'; s_screen=SCR_LOCK; return; }
-    if(ev==BTN_K1_DOUBLE){
+    // Global deliberate shortcuts
+    if(ev==BTN_K1_HOLD){
         s_nfc_armed=!s_nfc_armed;
         hal_nfc_set_service_enabled(s_nfc_armed);
         if(s_nfc_armed)hal_nfc_ensure_init(); else hal_nfc_shutdown();
         s_nfc_widget_ms=2000; s_nfc_widget_armed=s_nfc_armed; return;
+    }
+    if(ev==BTN_K4_HOLD){
+        if(wallet_is_onboarded()){
+            wallet_lock(); s_tx_overlay=false; roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60);
+            s_lock_err[0]='\0'; s_screen=SCR_LOCK;
+        }
+        return;
+    }
+    if(ev==BTN_K4_DOUBLE){ s_tx_overlay=false; g_nfc_tx.valid=false; s_screen=SCR_HOME; s_slide=SLIDE_WATCHFACE; return; }
+    if(ev==BTN_K1_DOUBLE){
+        return;
     }
 
     if(s_tx_overlay){ handle_tx(ev); return; }
@@ -1243,14 +1300,17 @@ void app_main(void)
         while(xQueueReceive(s_btn_q,&ev,0)==pdTRUE) { handle_button(ev); force_render=true; }
 
         bool game_fast=(s_screen==SCR_PING_PONG);
+        bool animated_watchface=(s_screen==SCR_HOME && s_slide==SLIDE_WATCHFACE &&
+                                 (s_watchface==0 || s_watchface==1));
         bool active_render=game_fast
+            || animated_watchface
             || s_screen==SCR_TETRIS
             || s_screen==SCR_TAMAGOTCHI
             || s_tx_overlay
             || s_nfc_widget_ms>0
             || s_sync_widget_ms>0
             || (s_screen==SCR_HOME && s_slide==SLIDE_GRID);
-        uint32_t render_period=game_fast ? FRAME_MS : (active_render ? 66 : 250);
+        uint32_t render_period=game_fast ? FRAME_MS : (animated_watchface ? 100 : (active_render ? 66 : 250));
         if(!force_render && render_accum<render_period){
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
