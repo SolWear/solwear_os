@@ -108,12 +108,13 @@ static uint8_t hex_nibble(char c)
 // Settings
 // ============================================================
 static int8_t s_settings_sel = 0;
+static bool   s_gm_big       = false;
 static const char *s_settings_items[] = {
     "Watchface: GM","Watchface: GN","Watchface: Digital","Watchface: Analog",
     "Watchface: Wallet","Watchface: Minimal",
-    "Change Password","About"
+    "Change Password","About","GM Big Text"
 };
-#define SETTINGS_COUNT 8
+#define SETTINGS_COUNT 9
 
 // ============================================================
 // Transactions
@@ -607,7 +608,11 @@ static void render_watchface(void)
 
     if(s_watchface==0){
         draw_sunrise_scene(LCD_W/2,104);
-        ui_str_center(26,"GOOD MORNING",PBL_DIM,1);
+        if(s_gm_big){
+            int gmw=ui_str_width("GM",4); ui_str(LCD_W/2-gmw/2,28,"GM",PBL_FG,4);
+        } else {
+            ui_str_center(26,"GOOD MORNING",PBL_DIM,1);
+        }
         int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,156,t,PBL_FG,3);
         ui_str(LCD_W/2+tw/2+2,166,sec,PBL_DIM,2);
         ui_str_center(196,s_nfc_armed?"NFC READY":"NFC OFF",PBL_DIM,1);
@@ -817,7 +822,12 @@ static void render_settings(void)
         uint16_t fg=(s_settings_sel==i)?PBL_BG:PBL_FG;
         if(s_settings_sel==i) ui_rounded_rect(6,y,LCD_W-12,21,4,PBL_FG);
         else                   ui_rounded_rect_outline(6,y,LCD_W-12,21,4,PBL_LINE);
-        ui_str(14,y+6,s_settings_items[i],fg,1);
+        if(i==8){
+            char lbl[28]; snprintf(lbl,sizeof(lbl),"GM Big Text: %s",s_gm_big?"ON":"OFF");
+            ui_str(14,y+6,lbl,fg,1);
+        } else {
+            ui_str(14,y+6,s_settings_items[i],fg,1);
+        }
     }
     ui_str_center(LCD_H-12,"K1/K2 nav  K3 select  K4 back",PBL_DIM,1);
 }
@@ -1366,7 +1376,10 @@ static void handle_button(btn_event_t ev)
         case SCR_SETTINGS:
             if(ev==BTN_K1_PRESS&&s_settings_sel>0) s_settings_sel--;
             if(ev==BTN_K2_PRESS&&s_settings_sel<SETTINGS_COUNT-1) s_settings_sel++;
-            if(ev==BTN_K3_PRESS&&s_settings_sel<WATCHFACE_COUNT) s_watchface=(uint8_t)s_settings_sel;
+            if(ev==BTN_K3_PRESS){
+                if(s_settings_sel<WATCHFACE_COUNT) s_watchface=(uint8_t)s_settings_sel;
+                else if(s_settings_sel==8) s_gm_big=!s_gm_big;
+            }
             if(ev==BTN_K4_PRESS) s_screen=SCR_HOME;
             break;
         case SCR_WALLET:
