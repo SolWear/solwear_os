@@ -464,35 +464,47 @@ static void draw_sunrise_scene(int cx, int cy)
     int rise=(int)(4.f*sinf(s_anim*0.0018f));
     int sx=cx, sy=cy-rise;
 
-    // Warm gradient sky above horizon
+    // Warm gradient sky: dark at top, orange-amber near horizon
     if(sy+1>STATUS_BAR_H)
         ui_gradient_h(0,STATUS_BAR_H,LCD_W,sy+1-STATUS_BAR_H,
-                      COLOR_BLACK, rgb565(0x3C,0x12,0x00));
+                      COLOR_BLACK, rgb565(0x50,0x20,0x08));
 
-    // Filled sun at horizon
+    // Sun glow aura rings (outer→inner, drawn before white disc)
+    st7789_fb_circle(sx,sy,44,rgb565(0x20,0x08,0x00));
+    st7789_fb_circle(sx,sy,38,rgb565(0x40,0x18,0x00));
+    st7789_fb_circle(sx,sy,32,rgb565(0x60,0x24,0x04));
+
+    // Solid white sun orb (no dark inner — just pure bright disc)
     st7789_fb_circle_fill(sx,sy,22,PBL_FG);
-    st7789_fb_circle_fill(sx,sy,12,rgb565(0x60,0x28,0x00));
 
-    // Horizon cut: erase lower sun half + below
-    st7789_fb_rect(0,sy+1,LCD_W,42,PBL_BG);
+    // Horizon cut (erase sun bottom half + below)
+    st7789_fb_rect(0,sy+1,LCD_W,48,PBL_BG);
 
-    // Radial rays above horizon only
-    int pulse=(s_anim/180)%9;
+    // Horizon glow: bright line + warm halos spreading outward
+    st7789_fb_hline(sx-110,sy,220,PBL_FG);
+    st7789_fb_hline(sx-88,sy-1,176,rgb565(0xB0,0x50,0x10));
+    st7789_fb_hline(sx-66,sy-2,132,rgb565(0x70,0x28,0x06));
+    st7789_fb_hline(sx-44,sy-3, 88,rgb565(0x40,0x14,0x02));
+
+    // Radial rays above horizon
+    int pulse=(s_anim/200)%9;
     for(int i=0;i<9;i++){
         float a=(-80.f+i*20.f)*3.14159f/180.f;
         int inner=26+(i==pulse?2:0);
-        int outer=38+(i==pulse?5:0);
+        int outer=46+(i==pulse?8:0);
         int x1=sx+(int)(inner*sinf(a));
         int y1=sy-(int)(inner*cosf(a));
         int x2=sx+(int)(outer*sinf(a));
         int y2=sy-(int)(outer*cosf(a));
-        if(y2<sy+4) draw_line(x1,y1,x2,y2,(i==pulse)?PBL_FG:PBL_DIM);
+        if(y2<sy+2) draw_line(x1,y1,x2,y2,(i==pulse)?PBL_FG:PBL_DIM);
     }
 
-    // Filled clouds in front of sun (depth: front=white, mid=dim, back=dim)
-    draw_cloud_wrap(32-(int)((s_anim/65)%336),  sy-14, 58, PBL_FG);
-    draw_cloud_wrap(154-(int)((s_anim/88)%336), sy+2,  72, PBL_DIM);
-    draw_cloud_wrap(246-(int)((s_anim/54)%336), sy-6,  50, PBL_FG);
+    // Warm-tinted clouds at horizon (lit by sunrise)
+    uint16_t c_lit=rgb565(0xF0,0x88,0x50);
+    uint16_t c_shd=rgb565(0xA8,0x54,0x28);
+    draw_cloud_wrap(32-(int)((s_anim/65)%336),  sy-14, 58, c_lit);
+    draw_cloud_wrap(154-(int)((s_anim/88)%336), sy+2,  72, c_shd);
+    draw_cloud_wrap(246-(int)((s_anim/54)%336), sy-6,  50, c_lit);
 }
 
 static void draw_app_icon(int icon, int cx, int cy, uint16_t c, uint16_t bg)
@@ -594,16 +606,12 @@ static void render_watchface(void)
     uint8_t bat=hal_battery_percent();
 
     if(s_watchface==0){
-        draw_sunrise_scene(LCD_W/2,112);
-        ui_str_center(30,"GOOD MORNING",PBL_DIM,1);
-        int gmw=ui_str_width("GM",5);
-        ui_str(LCD_W/2-gmw/2,56,"GM",PBL_FG,5);
-        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,126,t,PBL_FG,3);
-        ui_str(LCD_W/2+tw/2+2,134,sec,PBL_DIM,1);
-        st7789_fb_rect_outline(28,164,184,34,PBL_LINE);
-        ui_str(38,174,"TODAY",PBL_DIM,1);
-        ui_str_right(202,174,s_nfc_armed?"NFC READY":"NFC OFF",PBL_FG,1);
-        draw_meter(48,186,144,7,bat,PBL_FG);
+        draw_sunrise_scene(LCD_W/2,104);
+        ui_str_center(26,"GOOD MORNING",PBL_DIM,1);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,156,t,PBL_FG,3);
+        ui_str(LCD_W/2+tw/2+2,166,sec,PBL_DIM,2);
+        ui_str_center(196,s_nfc_armed?"NFC READY":"NFC OFF",PBL_DIM,1);
+        draw_meter(30,210,180,5,bat,PBL_FG);
     } else if(s_watchface==1){
         draw_night_sky();
         ui_str_center(42,"GOOD NIGHT",PBL_DIM,1);
@@ -864,24 +872,52 @@ static void render_receive_app(void)
 static void render_sync_effect(void)
 {
     if(s_sync_widget_ms==0) return;
-    uint16_t fg=PBL_FG;
-    st7789_fb_rect(18,52,204,126,PBL_BG);
-    st7789_fb_rect_outline(18,52,204,126,fg);
+    uint32_t elapsed=2400-s_sync_widget_ms;
 
-    int wx=72, px=168, cy=104;
-    st7789_fb_rect_outline(wx-17,cy-25,34,50,fg);
-    st7789_fb_rect_outline(px-18,cy-28,36,56,fg);
-    int phase=(s_anim/140)%4;
-    for(int i=0;i<4;i++){
-        int x=102+i*12;
-        st7789_fb_rect(x,cy-2,5,5,(i==phase)?fg:PBL_DIM);
+    // Backdrop
+    st7789_fb_rect(18,50,204,128,PBL_BG);
+    st7789_fb_rect_outline(18,50,204,128,PBL_FG);
+
+    // Watch icon — static left
+    int wx=70, wy=108;
+    st7789_fb_rect_outline(wx-14,wy-24,28,48,PBL_FG);   // body
+    st7789_fb_rect(wx-9,wy-18,18,30,PBL_DIM);            // screen
+    st7789_fb_hline(wx-16,wy-8,2,PBL_FG);               // left buttons
+    st7789_fb_hline(wx-16,wy,2,PBL_FG);
+    st7789_fb_hline(wx+14,wy-4,2,PBL_FG);               // right button
+
+    // Phone slides in from right edge
+    int slide_ms=(int)((elapsed<500)?elapsed:500);
+    float t=(float)slide_ms/500.f;
+    float ease=1.f-(1.f-t)*(1.f-t);
+    int target_px=170;
+    int px=222-(int)(ease*(222-target_px));
+
+    if(px<LCD_W+20){
+        st7789_fb_rect_outline(px-12,wy-26,24,52,PBL_FG);  // body
+        st7789_fb_rect(px-8,wy-20,16,36,PBL_DIM);           // screen
+        st7789_fb_circle_fill(px,wy+22,3,PBL_FG);           // home button
+        st7789_fb_pixel(px-1,wy-24,PBL_FG);                 // camera
+        st7789_fb_pixel(px,  wy-24,PBL_FG);
     }
-    st7789_fb_circle_fill(wx,cy,3,fg);
-    st7789_fb_circle_fill(px,cy,3,fg);
 
-    const char *msg = g_nfc_sync.message[0] ? g_nfc_sync.message : "Wallet shared";
-    ui_str_center(148,msg,fg,1);
-    ui_str_center(162,"finish in phone app",PBL_DIM,1);
+    // Connection dots (appear after phone lands)
+    if(elapsed>520){
+        int phase=(s_anim/150)%5;
+        int x0=wx+16, x1=px-14;
+        int span=x1-x0;
+        if(span>10){
+            for(int i=0;i<5;i++){
+                int dx=x0+(span*(i*2+1))/10;
+                uint16_t c=(i==phase)?PBL_FG:(i==(phase+4)%5)?PBL_DIM:PBL_LINE;
+                st7789_fb_rect(dx-2,wy-2,5,5,c);
+            }
+        }
+    }
+
+    const char *msg=g_nfc_sync.message[0]?g_nfc_sync.message:"Wallet shared";
+    ui_str_center(150,msg,PBL_FG,1);
+    ui_str_center(164,"finish in phone app",PBL_DIM,1);
 }
 
 static void render_stats(void)
