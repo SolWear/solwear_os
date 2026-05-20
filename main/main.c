@@ -298,7 +298,7 @@ static void on_button(btn_event_t ev){ xQueueSend(s_btn_q, &ev, 0); }
 #define PBL_DIM     RGB565(0x7B,0x7B,0x7B)
 #define PBL_LINE    RGB565(0x3A,0x3A,0x3A)
 #define PBL_PANEL   RGB565(0x10,0x10,0x10)
-#define SOLWEAR_OS_VERSION "SolWearOS v1.2-pv2"
+#define SOLWEAR_OS_VERSION "SolWearOS v1.3-pv2"
 #define UI_TRANSITION_MS 140
 
 static uint32_t s_ui_transition_ms=0;
@@ -811,22 +811,28 @@ static void render_settings(void)
 
 static void render_transactions(void)
 {
-    st7789_fb_fill(COLOR_BLACK); draw_status("Transactions");
-    char bal[32]; snprintf(bal,sizeof(bal),"Bal: %.4f SOL",(double)s_balance);
-    st7789_fb_rect_outline(4,STATUS_BAR_H+2,LCD_W-8,22,PBL_LINE);
-    ui_str_center(STATUS_BAR_H+8,bal,PBL_FG,1);
+    st7789_fb_fill(COLOR_BLACK); draw_status("Activity");
+    char bal[32]; snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
+    ui_str_center(30,bal,PBL_FG,2);
+    st7789_fb_hline(16,46,208,PBL_LINE);
+
     if(s_rx_n==0){
-        ui_str_center(130,"No transactions",PBL_DIM,2);
-        ui_str_center(158,"Phone prepares, watch signs",PBL_DIM,1);
+        // Empty state visual
+        int cx=LCD_W/2, cy=128;
+        st7789_fb_circle(cx,cy,26,PBL_LINE);
+        st7789_fb_hline(cx-16,cy,32,PBL_LINE);
+        ui_str_center(168,"No activity yet",PBL_DIM,1);
+        ui_str_center(184,"phone sends, watch signs",PBL_DIM,1);
         return;
     }
-    for(int i=0;i<5&&(s_rx_scroll+i)<s_rx_n;i++){
-        int y=STATUS_BAR_H+28+i*30;
-        st7789_fb_rect_outline(4,y,LCD_W-8,26,PBL_LINE);
+    for(int i=0;i<4&&(s_rx_scroll+i)<(int)s_rx_n;i++){
+        int y=52+i*44;
+        ui_rounded_rect_outline(6,y,LCD_W-12,38,3,PBL_LINE);
         char tmp[40]; strncpy(tmp,s_rx[s_rx_scroll+i],39); tmp[39]='\0';
-        ui_str(8,y+7,tmp,PBL_FG,1);
+        ui_str(14,y+8,tmp,PBL_FG,1);
+        ui_str(14,y+22,"signed",PBL_DIM,1);
     }
-    char pg[12]; snprintf(pg,sizeof(pg),"%d/%d",s_rx_scroll+1,(int)s_rx_n);
+    char pg[16]; snprintf(pg,sizeof(pg),"%d / %d",s_rx_scroll+1,(int)s_rx_n);
     ui_str_center(LCD_H-12,pg,PBL_DIM,1);
 }
 
@@ -954,23 +960,34 @@ static void render_sync_effect(void)
 static void render_stats(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status("Stats");
-    char buf[48]; int y=STATUS_BAR_H+10;
-    snprintf(buf,sizeof(buf),"Battery:  %d%%",hal_battery_percent());
-    ui_str(8,y,buf,PBL_FG,2); y+=26;
-    draw_meter(10,y,220,8,hal_battery_percent(),PBL_FG); y+=18;
-    snprintf(buf,sizeof(buf),"Voltage:  %.2fV",hal_battery_mv()/1000.f);
-    ui_str(8,y,buf,PBL_FG,1); y+=18;
-    snprintf(buf,sizeof(buf),"Charging: %s",hal_battery_charging()?"Yes":"No");
-    ui_str(8,y,buf,PBL_FG,1); y+=18;
-    snprintf(buf,sizeof(buf),"Cell:     350mAh LW303040");
-    ui_str(8,y,buf,PBL_DIM,1); y+=22;
-    snprintf(buf,sizeof(buf),"NFC:      %s",s_nfc_armed?"Armed":"Disarmed");
-    ui_str(8,y,buf,s_nfc_armed?PBL_FG:PBL_DIM,1); y+=18;
-    snprintf(buf,sizeof(buf),"Wallet:   %s",wallet_name());
-    ui_str(8,y,buf,PBL_FG,1); y+=18;
-    snprintf(buf,sizeof(buf),"Heap:     %u B",(unsigned)esp_get_free_heap_size());
-    ui_str(8,y,buf,PBL_DIM,1); y+=18;
-    ui_str(8,y,SOLWEAR_OS_VERSION,PBL_DIM,1);
+    uint8_t bat=hal_battery_percent();
+    char buf[40];
+
+    // Battery — large + visual
+    ui_str_center(30,"BATTERY",PBL_DIM,1);
+    snprintf(buf,sizeof(buf),"%d%%",bat);
+    int bpw=ui_str_width(buf,3); ui_str(LCD_W/2-bpw/2,42,buf,PBL_FG,3);
+    if(hal_battery_charging()){
+        ui_str_center(72,"\x05 CHARGING",rgb565(0x40,0xD0,0x40),1);
+    }
+    draw_meter(20,78,200,8,bat,PBL_FG);
+    st7789_fb_hline(16,94,208,PBL_LINE);
+
+    // System info rows
+    int y=104;
+    snprintf(buf,sizeof(buf),"Voltage   %.2fV",hal_battery_mv()/1000.f);
+    ui_str(14,y,buf,PBL_DIM,1); y+=16;
+    snprintf(buf,sizeof(buf),"NFC       %s",s_nfc_armed?"Armed":"Off");
+    ui_str(14,y,buf,s_nfc_armed?PBL_FG:PBL_DIM,1); y+=16;
+    snprintf(buf,sizeof(buf),"Wallet    %s",wallet_name());
+    ui_str(14,y,buf,PBL_FG,1); y+=16;
+    snprintf(buf,sizeof(buf),"Heap      %u B",(unsigned)esp_get_free_heap_size());
+    ui_str(14,y,buf,PBL_DIM,1); y+=16;
+    snprintf(buf,sizeof(buf),"Cell      350mAh LW303040");
+    ui_str(14,y,buf,PBL_DIM,1);
+
+    st7789_fb_hline(16,172,208,PBL_LINE);
+    ui_str_center(182,SOLWEAR_OS_VERSION,PBL_DIM,1);
 }
 
 static int8_t s_games_sel=0;
@@ -1090,42 +1107,52 @@ static void render_tx_overlay(void)
     st7789_fb_rect_outline(8,20,LCD_W-16,LCD_H-40,border);
 
     if(s_tx_state==TX_SHOW){
-        ui_str_center(30,"VERIFY REQUEST",PBL_FG,2);
+        // Lock icon + header
+        draw_app_icon(6,LCD_W/2,34,PBL_FG,PBL_BG);
+        ui_str_center(54,"VERIFY REQUEST",PBL_FG,1);
+        st7789_fb_hline(16,64,208,PBL_LINE);
         char fr[18],to[18];
-        short_text(g_nfc_tx.from, fr, sizeof(fr));
-        short_text(g_nfc_tx.to, to, sizeof(to));
+        short_text(g_nfc_tx.from,fr,sizeof(fr));
+        short_text(g_nfc_tx.to,to,sizeof(to));
         float sol=(float)(g_nfc_tx.lamports/1000000000ULL)+(float)(g_nfc_tx.lamports%1000000000ULL)/1e9f;
         char amt[20]; snprintf(amt,sizeof(amt),g_nfc_tx.lamports?"%.4f SOL":"TX REQUEST",(double)sol);
-        ui_str(16,55,"From",PBL_DIM,1); ui_str(70,55,fr,PBL_FG,1);
-        ui_str(16,72,"To",  PBL_DIM,1); ui_str(70,72,to,PBL_FG,1);
-        int tw=ui_str_width(amt,2); ui_str(LCD_W/2-tw/2,96,amt,PBL_FG,2);
-        char net[32]; snprintf(net,sizeof(net),"%s  fee %.6f",g_nfc_tx.network[0]?g_nfc_tx.network:"devnet",
+        ui_str(16,74,"From",PBL_DIM,1); ui_str(68,74,fr,PBL_FG,1);
+        ui_str(16,90,"To",  PBL_DIM,1); ui_str(68,90,to,PBL_FG,1);
+        int tw=ui_str_width(amt,2); ui_str(LCD_W/2-tw/2,108,amt,PBL_FG,2);
+        char net[32]; snprintf(net,sizeof(net),"%s  fee %.6f",
+                               g_nfc_tx.network[0]?g_nfc_tx.network:"devnet",
                                (double)g_nfc_tx.fee_lamports/1000000000.0);
-        ui_str_center(120,net,PBL_DIM,1);
-        st7789_fb_rect(14,145,96,34,PBL_FG);
+        ui_str_center(132,net,PBL_DIM,1);
+        st7789_fb_hline(16,142,208,PBL_LINE);
+        // Rounded buttons
+        ui_rounded_rect(14,150,96,34,5,PBL_FG);
         int t1w=ui_str_width("K3 Review",1);
-        ui_str(14+(96-t1w)/2,156,"K3 Review",PBL_BG,1);
-        st7789_fb_rect_outline(118,145,96,34,PBL_FG);
+        ui_str(14+(96-t1w)/2,161,"K3 Review",PBL_BG,1);
+        ui_rounded_rect_outline(118,150,96,34,5,PBL_FG);
         int t2w=ui_str_width("K4 Reject",1);
-        ui_str(118+(96-t2w)/2,156,"K4 Reject",PBL_FG,1);
+        ui_str(118+(96-t2w)/2,161,"K4 Reject",PBL_FG,1);
     } else if(s_tx_state==TX_TIMER){
-        ui_str_center(38,"CHECK DETAILS",PBL_FG,2);
+        ui_str_center(36,"REVIEW PERIOD",PBL_FG,1);
         uint32_t rem=(TX_CONFIRM_TIMER_MS-s_tx_timer+999)/1000;
         char sc[8]; snprintf(sc,sizeof(sc),"%u",(unsigned)rem);
-        int tw=ui_str_width(sc,4); ui_str(LCD_W/2-tw/2,82,sc,PBL_FG,4);
-        ui_str_center(140,"seconds to final sign",PBL_DIM,1);
-        int bw2=(int)((LCD_W-32)*(uint64_t)s_tx_timer/TX_CONFIRM_TIMER_MS);
-        st7789_fb_rect_outline(16,152,LCD_W-32,8,PBL_LINE);
-        st7789_fb_rect(16,152,bw2,8,PBL_FG);
+        int tw=ui_str_width(sc,5); ui_str(LCD_W/2-tw/2,76,sc,PBL_FG,5);
+        ui_str_center(138,"seconds remaining",PBL_DIM,1);
+        // Countdown bar (full→empty as time passes)
+        int brem=(int)((LCD_W-32)*(float)(TX_CONFIRM_TIMER_MS-s_tx_timer)/TX_CONFIRM_TIMER_MS);
+        st7789_fb_rect_outline(16,150,LCD_W-32,8,PBL_LINE);
+        if(brem>0) st7789_fb_rect(16,150,brem,8,(rem<=3)?PBL_DIM:PBL_FG);
         ui_str_center(170,"K4 to cancel",PBL_DIM,1);
     } else {
-        ui_str_center(42,"TRUSTED SIGN",PBL_FG,2);
-        ui_str_center(78,"SolWear will sign",PBL_FG,1);
-        ui_str_center(96,"only this request",PBL_DIM,1);
-        st7789_fb_rect(20,128,88,34,PBL_FG);
-        int t1w=ui_str_width("K3 Sign",1); ui_str(20+(88-t1w)/2,139,"K3 Sign",PBL_BG,1);
-        st7789_fb_rect_outline(116,128,88,34,PBL_FG);
-        int t2w=ui_str_width("K4 Cancel",1); ui_str(116+(88-t2w)/2,139,"K4 Cancel",PBL_DIM,1);
+        ui_str_center(36,"SIGN TRANSACTION",PBL_FG,2);
+        st7789_fb_hline(16,56,208,PBL_LINE);
+        ui_str_center(74,"SolWear will sign",PBL_FG,1);
+        ui_str_center(90,"this request only.",PBL_DIM,1);
+        ui_str_center(106,"Key stays on device.",PBL_DIM,1);
+        st7789_fb_hline(16,120,208,PBL_LINE);
+        ui_rounded_rect(14,130,96,34,5,PBL_FG);
+        int t1w=ui_str_width("K3 Sign",1); ui_str(14+(96-t1w)/2,141,"K3 Sign",PBL_BG,1);
+        ui_rounded_rect_outline(118,130,96,34,5,PBL_FG);
+        int t2w=ui_str_width("K4 Cancel",1); ui_str(118+(96-t2w)/2,141,"K4 Cancel",PBL_DIM,1);
     }
 }
 
