@@ -106,8 +106,16 @@ void roulette_render(const roulette_t *r)
     int cx = LCD_W / 2;
     int drum_y = r->y0 + 4;
 
-    // Drum background
-    ui_rounded_rect(cx - 44, drum_y, 88, ROW_H * 3, 8, COLOR_DARKBG);
+    // Monochrome drum: flat, mechanical, readable on the tiny panel.
+    st7789_fb_rect(cx - 58, drum_y - 4, 116, ROW_H * 3 + 8, COLOR_BLACK);
+    st7789_fb_rect_outline(cx - 58, drum_y - 4, 116, ROW_H * 3 + 8, COLOR_GRAY);
+    st7789_fb_vline(cx - 52, drum_y + 2, ROW_H * 3 - 4, COLOR_GRAY);
+    st7789_fb_vline(cx + 51, drum_y + 2, ROW_H * 3 - 4, COLOR_GRAY);
+    for (int y = drum_y + 6; y < drum_y + ROW_H * 3; y += 10) {
+        st7789_fb_hline(cx - 57, y, 7, COLOR_GRAY);
+        st7789_fb_hline(cx + 51, y, 7, COLOR_GRAY);
+    }
+    st7789_fb_rect(cx - 52, drum_y + ROW_H, 104, ROW_H, COLOR_WHITE);
 
     // Draw 3 rows: prev, current, next
     for (int8_t row = -1; row <= 1; row++) {
@@ -123,7 +131,7 @@ void roulette_render(const roulette_t *r)
         uint8_t scale = (row == 0) ? 3 : 2;
         uint16_t color;
         if (row == 0) {
-            color = (ch == OK_SENTINEL) ? COLOR_SOL_GRN : COLOR_WHITE;
+            color = COLOR_BLACK;
         } else {
             color = COLOR_GRAY;
         }
@@ -132,8 +140,10 @@ void roulette_render(const roulette_t *r)
         ui_str(cx - tw / 2, row_y, str, color, scale);
     }
 
-    // Highlight box around current row
-    ui_rounded_rect_outline(cx - 42, drum_y + ROW_H, 84, ROW_H, 6, COLOR_SOL_PUR);
+    // Highlight rails around current row
+    st7789_fb_rect_outline(cx - 52, drum_y + ROW_H, 104, ROW_H, COLOR_WHITE);
+    st7789_fb_hline(cx - 44, drum_y + ROW_H - 3, 88, COLOR_WHITE);
+    st7789_fb_hline(cx - 44, drum_y + ROW_H * 2 + 2, 88, COLOR_WHITE);
 
     // Buffer display (dots for secret, chars for text)
     int buf_y = drum_y + ROW_H * 3 + 10;
@@ -147,7 +157,8 @@ void roulette_render(const roulette_t *r)
 
     const char *show = (r->len == 0) ? "_" : disp;
     int tw = ui_str_width(show, 2);
-    ui_str(cx - tw / 2, buf_y, show, COLOR_SOL_GRN, 2);
+    st7789_fb_rect_outline(cx - 70, buf_y - 4, 140, 24, COLOR_GRAY);
+    ui_str(cx - tw / 2, buf_y, show, COLOR_WHITE, 2);
 
     // Char/max counter
     char cnt[12];
@@ -156,5 +167,5 @@ void roulette_render(const roulette_t *r)
     ui_str(cx - ctw / 2, buf_y + 18, cnt, COLOR_GRAY, 1);
 
     // Hint
-    ui_str_center(buf_y + 32, "K1^ K2v K3=OK K4=DEL", COLOR_GRAY, 1);
+    ui_str_center(buf_y + 32, "K1/K2 SPIN  K3 SET  K4 DEL", COLOR_GRAY, 1);
 }

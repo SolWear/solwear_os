@@ -298,6 +298,11 @@ static void on_button(btn_event_t ev){ xQueueSend(s_btn_q, &ev, 0); }
 #define PBL_DIM     RGB565(0x7B,0x7B,0x7B)
 #define PBL_LINE    RGB565(0x3A,0x3A,0x3A)
 #define PBL_PANEL   RGB565(0x10,0x10,0x10)
+#define SOLWEAR_OS_VERSION "SolWearOS v1.2-pv2"
+#define UI_TRANSITION_MS 180
+
+static uint32_t s_ui_transition_ms=0;
+static int8_t s_ui_transition_dir=1;
 
 static void draw_status(const char *title)
 {
@@ -374,34 +379,77 @@ static void draw_star(int x, int y, uint16_t c)
     st7789_fb_pixel(x,y+1,c);
 }
 
+static void draw_cloud_raw(int x, int y, int w, uint16_t c)
+{
+    int h=w/4;
+    st7789_fb_hline(x+4,y+h,w-8,c);
+    st7789_fb_circle(x+w/5,y+h-2,h/2,c);
+    st7789_fb_circle(x+w/2,y+h-7,h*2/3,c);
+    st7789_fb_circle(x+w*3/4,y+h-3,h/2,c);
+    st7789_fb_hline(x+w/5,y+h+5,w*3/5,c);
+}
+
+static void draw_cloud_wrap(int x, int y, int w, uint16_t c)
+{
+    const int span=LCD_W+96;
+    while(x<-80) x+=span;
+    while(x>LCD_W+32) x-=span;
+    draw_cloud_raw(x,y,w,c);
+    draw_cloud_raw(x-span,y,w,c);
+    draw_cloud_raw(x+span,y,w,c);
+}
+
 static void draw_moon_scene(int cx, int cy)
 {
-    int wobble=(int)(3.f*sinf(s_anim*0.0024f));
-    int phase=(s_anim/120)%34;
-    int shade=(phase<17)?phase:(34-phase);
-    int mx=cx+wobble;
-    int my=cy+(int)(2.f*cosf(s_anim*0.0017f));
-    st7789_fb_circle_fill(mx,my,20,PBL_FG);
-    st7789_fb_circle_fill(mx+7-shade,my-4,20,PBL_BG);
-    st7789_fb_circle(mx,my,20,PBL_FG);
-    st7789_fb_circle(mx,my,15,PBL_DIM);
+    st7789_fb_circle_fill(cx,cy,21,PBL_FG);
+    st7789_fb_circle_fill(cx+8,cy-5,21,PBL_BG);
+    st7789_fb_circle(cx,cy,21,PBL_FG);
+    if((s_anim/700)&1) st7789_fb_circle(cx,cy,15,PBL_DIM);
+}
+
+static void draw_night_sky(void)
+{
+    for(int i=0;i<28;i++){
+        int drift=(int)(s_anim/(95+(i%5)*22));
+        int x=(i*43+19-drift)%LCD_W;
+        if(x<0) x+=LCD_W;
+        int y=STATUS_BAR_H+10+((i*31+7)%(LCD_H-STATUS_BAR_H-68));
+        if((i%6)==0) y+=(int)(2.f*sinf((s_anim+i*120)*0.003f));
+        uint16_t c=(((s_anim/320)+i)%5)==0?PBL_FG:PBL_DIM;
+        if((i%5)==0) draw_star(x,y,c); else st7789_fb_pixel(x,y,c);
+    }
+
+    for(int k=0;k<2;k++){
+        uint32_t t=(s_anim+(uint32_t)k*1300)%3600;
+        if(t<900){
+            int x=214-(int)(t/5)-k*36;
+            int y=42+(int)(t/13)+k*26;
+            draw_line(x,y,x+20,y-9,PBL_FG);
+            draw_line(x+3,y+1,x+14,y-4,PBL_DIM);
+            st7789_fb_pixel(x,y,PBL_FG);
+        }
+    }
 }
 
 static void draw_sunrise_scene(int cx, int cy)
 {
-    int rise=(int)(5.f*sinf(s_anim*0.0018f));
+    draw_cloud_wrap(32-(int)((s_anim/65)%336),42,58,PBL_DIM);
+    draw_cloud_wrap(154-(int)((s_anim/88)%336),64,72,PBL_LINE);
+    draw_cloud_wrap(246-(int)((s_anim/54)%336),86,50,PBL_DIM);
+
+    int rise=(int)(4.f*sinf(s_anim*0.0018f));
     int sx=cx;
     int sy=cy-rise;
-    st7789_fb_circle(sx,sy,21,PBL_FG);
-    st7789_fb_circle(sx,sy,15,PBL_DIM);
-    st7789_fb_rect(54,sy+2,132,30,PBL_BG);
-    st7789_fb_hline(44,sy+2,152,PBL_FG);
-    st7789_fb_hline(62,sy+12,116,PBL_LINE);
-    st7789_fb_hline(78,sy+22,84,PBL_LINE);
+    st7789_fb_circle(sx,sy,24,PBL_FG);
+    st7789_fb_circle(sx,sy,16,PBL_DIM);
+    st7789_fb_rect(38,sy+1,164,36,PBL_BG);
+    st7789_fb_hline(32,sy+1,176,PBL_FG);
+    st7789_fb_hline(58,sy+13,124,PBL_LINE);
+    st7789_fb_hline(82,sy+25,76,PBL_LINE);
 
-    int pulse=(s_anim/220)%4;
-    for(int i=0;i<8;i++){
-        float a=(-70.f+i*20.f)*3.14159f/180.f;
+    int pulse=(s_anim/180)%9;
+    for(int i=0;i<9;i++){
+        float a=(-80.f+i*20.f)*3.14159f/180.f;
         int inner=28+(i==pulse?2:0);
         int outer=42+(i==pulse?5:0);
         int x1=sx+(int)(inner*sinf(a));
@@ -468,6 +516,30 @@ static void draw_app_tile(int x, int y, int icon, const char *label, bool sel)
     draw_app_icon(icon, x + 47, y + 31, fg, bg);
 }
 
+static void ui_transition_mark(int8_t dir)
+{
+    s_ui_transition_ms=UI_TRANSITION_MS;
+    s_ui_transition_dir=(dir<0)?-1:1;
+}
+
+static void render_system_transition(void)
+{
+    if(s_ui_transition_ms==0) return;
+    uint32_t elapsed=UI_TRANSITION_MS-s_ui_transition_ms;
+    int edge=(int)((uint64_t)elapsed*LCD_W/UI_TRANSITION_MS);
+    int x=(s_ui_transition_dir>0)?edge:(LCD_W-edge);
+    if(x<0) x=0;
+    if(x>=LCD_W) x=LCD_W-1;
+
+    st7789_fb_vline(x,STATUS_BAR_H,LCD_H-STATUS_BAR_H,PBL_FG);
+    for(int i=1;i<=6;i++){
+        int xx=x-s_ui_transition_dir*i*8;
+        if(xx>=0&&xx<LCD_W) st7789_fb_vline(xx,STATUS_BAR_H,LCD_H-STATUS_BAR_H,(i&1)?PBL_DIM:PBL_LINE);
+    }
+    int sweep=STATUS_BAR_H+(int)((uint64_t)elapsed*(LCD_H-STATUS_BAR_H)/UI_TRANSITION_MS);
+    if(sweep>=STATUS_BAR_H&&sweep<LCD_H) st7789_fb_hline(0,sweep,LCD_W,PBL_LINE);
+}
+
 // ============================================================
 // Render functions
 // ============================================================
@@ -483,22 +555,18 @@ static void render_watchface(void)
     uint8_t bat=hal_battery_percent();
 
     if(s_watchface==0){
+        draw_sunrise_scene(LCD_W/2,112);
         ui_str_center(30,"GOOD MORNING",PBL_DIM,1);
-        draw_sunrise_scene(LCD_W/2,88);
-        ui_str(28,64,"GM",PBL_FG,3);
-        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,118,t,PBL_FG,3);
-        ui_str(LCD_W/2+tw/2+2,126,sec,PBL_DIM,1);
-        st7789_fb_rect_outline(34,158,172,36,PBL_LINE);
-        ui_str(42,168,"TODAY",PBL_DIM,1);
-        ui_str_right(198,168,s_nfc_armed?"NFC READY":"NFC OFF",PBL_FG,1);
-        draw_meter(48,180,144,8,bat,PBL_FG);
+        int gmw=ui_str_width("GM",5);
+        ui_str(LCD_W/2-gmw/2,56,"GM",PBL_FG,5);
+        int tw=ui_str_width(t,3); ui_str(LCD_W/2-tw/2,126,t,PBL_FG,3);
+        ui_str(LCD_W/2+tw/2+2,134,sec,PBL_DIM,1);
+        st7789_fb_rect_outline(28,164,184,34,PBL_LINE);
+        ui_str(38,174,"TODAY",PBL_DIM,1);
+        ui_str_right(202,174,s_nfc_armed?"NFC READY":"NFC OFF",PBL_FG,1);
+        draw_meter(48,186,144,7,bat,PBL_FG);
     } else if(s_watchface==1){
-        for(int i=0;i<18;i++){
-            int x=(i*37+17)%LCD_W;
-            int y=STATUS_BAR_H+12+((i*29+11)%(LCD_H-STATUS_BAR_H-48));
-            uint16_t c=(((s_anim/260)+i)%4)==0?PBL_FG:PBL_DIM;
-            if((i%5)==0) draw_star(x,y,c); else st7789_fb_pixel(x,y,c);
-        }
+        draw_night_sky();
         ui_str_center(42,"GOOD NIGHT",PBL_DIM,1);
         draw_moon_scene(67,74);
         ui_str(118,64,"GN",PBL_FG,4);
@@ -665,8 +733,10 @@ static void render_onboard(void)
 static void render_lock(void)
 {
     st7789_fb_fill(COLOR_BLACK);
-    ui_str_center(20,"SolWearOS",PBL_FG,2);
-    ui_str_center(42,"Enter Password",PBL_DIM,1);
+    draw_status("LOCK");
+    st7789_fb_rect(24,34,192,30,PBL_FG);
+    ui_str_center(43,"SOLWEAR WALLET",PBL_BG,2);
+    ui_str_center(68,"SPIN TO UNLOCK",PBL_DIM,1);
     roulette_render(&s_roulette);
     if(s_lock_err[0]) ui_str_center(LCD_H-16,s_lock_err,PBL_FG,1);
 }
@@ -796,7 +866,7 @@ static void render_stats(void)
     ui_str(8,y,buf,PBL_FG,1); y+=18;
     snprintf(buf,sizeof(buf),"Heap:     %u B",(unsigned)esp_get_free_heap_size());
     ui_str(8,y,buf,PBL_DIM,1); y+=18;
-    ui_str(8,y,"SolWearOS v1.1-pv2",PBL_DIM,1);
+    ui_str(8,y,SOLWEAR_OS_VERSION,PBL_DIM,1);
 }
 
 static int8_t s_games_sel=0;
@@ -1043,7 +1113,7 @@ static void handle_ob(btn_event_t ev)
         }
         case OB_DONE:
             if(ev==BTN_K3_PRESS){
-                roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60);
+                roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,76);
                 s_lock_err[0]='\0'; s_screen=SCR_LOCK;
             }
             break;
@@ -1098,7 +1168,7 @@ static void handle_button(btn_event_t ev)
     }
     if(ev==BTN_K4_HOLD){
         if(wallet_is_onboarded()){
-            wallet_lock(); s_tx_overlay=false; roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60);
+            wallet_lock(); s_tx_overlay=false; roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,76);
             s_lock_err[0]='\0'; s_screen=SCR_LOCK;
         }
         return;
@@ -1121,7 +1191,7 @@ static void handle_button(btn_event_t ev)
                 else {
                     const screen_id_t t[GRID_APP_COUNT]={SCR_WALLET,SCR_RECEIVE,SCR_TRANSACTIONS,SCR_STATS,SCR_GAMES_MENU,SCR_SETTINGS,SCR_LOCK};
                     s_screen=t[s_grid_sel];
-                    if(s_screen==SCR_LOCK){ wallet_lock(); roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); }
+                    if(s_screen==SCR_LOCK){ wallet_lock(); roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,76); }
                     if(s_screen==SCR_WALLET) load_receipts();
                     if(s_screen==SCR_TRANSACTIONS) load_receipts();
                     if(s_screen==SCR_GAMES_MENU) s_games_sel=0;
@@ -1203,7 +1273,7 @@ static void handle_button(btn_event_t ev)
 // ============================================================
 void app_main(void)
 {
-    ESP_LOGI(TAG,"=== SolWearOS v1.1-pv2 ===");
+    ESP_LOGI(TAG,"=== %s ===",SOLWEAR_OS_VERSION);
 
     // Display first — always shows something on screen
     ESP_ERROR_CHECK(st7789_init());
@@ -1231,7 +1301,7 @@ void app_main(void)
     load_receipts();
 
     if(!wallet_is_onboarded()){ s_screen=SCR_ONBOARD; s_ob=OB_WELCOME; }
-    else { roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,60); s_screen=SCR_LOCK; }
+    else { roulette_init(&s_roulette,ROULETTE_MODE_ALPHA,8,1,true,76); s_screen=SCR_LOCK; }
     s_btn_q=xQueueCreate(16,sizeof(btn_event_t));
     hal_buttons_init(on_button);
 
@@ -1247,6 +1317,7 @@ void app_main(void)
 
         // Timers
         s_anim+=dt;
+        if(s_ui_transition_ms>dt){s_ui_transition_ms-=dt; force_render=true;} else s_ui_transition_ms=0;
         if(s_nfc_widget_ms>dt) s_nfc_widget_ms-=dt; else s_nfc_widget_ms=0;
         if(s_sync_widget_ms>dt) s_sync_widget_ms-=dt; else s_sync_widget_ms=0;
         if(g_nfc_sync.counter!=s_sync_seen_counter){
@@ -1299,18 +1370,48 @@ void app_main(void)
         btn_event_t ev;
         while(xQueueReceive(s_btn_q,&ev,0)==pdTRUE) { handle_button(ev); force_render=true; }
 
+        static bool ui_snap_ready=false;
+        static screen_id_t last_screen;
+        static home_slide_t last_slide;
+        static ob_step_t last_ob;
+        static int8_t last_grid,last_settings,last_games;
+        static uint8_t last_watchface;
+        static bool last_tx_overlay;
+        if(!ui_snap_ready){
+            ui_snap_ready=true;
+        } else if(s_screen!=last_screen || s_slide!=last_slide || s_ob!=last_ob ||
+                  s_grid_sel!=last_grid || s_settings_sel!=last_settings ||
+                  s_games_sel!=last_games || s_watchface!=last_watchface ||
+                  s_tx_overlay!=last_tx_overlay){
+            int8_t dir=1;
+            if(s_screen<last_screen || s_slide<last_slide ||
+               s_grid_sel<last_grid || s_settings_sel<last_settings ||
+               s_games_sel<last_games || s_watchface<last_watchface) dir=-1;
+            ui_transition_mark(dir);
+            force_render=true;
+        }
+        last_screen=s_screen;
+        last_slide=s_slide;
+        last_ob=s_ob;
+        last_grid=s_grid_sel;
+        last_settings=s_settings_sel;
+        last_games=s_games_sel;
+        last_watchface=s_watchface;
+        last_tx_overlay=s_tx_overlay;
+
         bool game_fast=(s_screen==SCR_PING_PONG);
         bool animated_watchface=(s_screen==SCR_HOME && s_slide==SLIDE_WATCHFACE &&
                                  (s_watchface==0 || s_watchface==1));
         bool active_render=game_fast
             || animated_watchface
+            || s_ui_transition_ms>0
             || s_screen==SCR_TETRIS
             || s_screen==SCR_TAMAGOTCHI
             || s_tx_overlay
             || s_nfc_widget_ms>0
             || s_sync_widget_ms>0
             || (s_screen==SCR_HOME && s_slide==SLIDE_GRID);
-        uint32_t render_period=game_fast ? FRAME_MS : (animated_watchface ? 100 : (active_render ? 66 : 250));
+        uint32_t render_period=game_fast ? FRAME_MS : (animated_watchface ? 50 : (active_render ? 50 : 250));
         if(!force_render && render_accum<render_period){
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
@@ -1332,6 +1433,7 @@ void app_main(void)
             case SCR_TETRIS:       render_tetris();       break;
             case SCR_TAMAGOTCHI:   render_tamagotchi();   break;
         }
+        render_system_transition();
         if(s_tx_overlay) render_tx_overlay();
         if(s_nfc_widget_ms>0) ui_nfc_widget(s_nfc_widget_armed);
         render_sync_effect();
