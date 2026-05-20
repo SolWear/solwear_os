@@ -719,12 +719,15 @@ static void render_onboard(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status(NULL);
     switch(s_ob){
-        case OB_WELCOME:
-            st7789_fb_rect(28,54,184,42,PBL_FG);
-            ui_str_center(66,"SolWearOS",PBL_BG,3);
-            ui_str_center(115,"Solana Hardware Wallet",PBL_DIM,1);
-            ui_str_center(165,"Press K3 to begin",PBL_FG,2);
-            break;
+        case OB_WELCOME:{
+            // 3-bar logomark
+            for(int i=0;i<3;i++) ui_rounded_rect(LCD_W/2-26+i*22,58,16,36,5,PBL_FG);
+            ui_str_center(108,"SOLWEAR",PBL_FG,2);
+            ui_str_center(128,"Solana Hardware Wallet",PBL_DIM,1);
+            st7789_fb_hline(40,148,160,PBL_LINE);
+            uint16_t pulse=((s_anim/500)&1)?PBL_FG:PBL_DIM;
+            ui_str_center(168,"Press K3 to begin",pulse,1);
+            break;}
         case OB_CHOICE:
             render_ob_choice("Setup Wallet","Generate Key","Import Key");
             break;
@@ -769,11 +772,16 @@ static void render_onboard(void)
             ui_str_center(30,"Wallet Name",PBL_FG,2);
             roulette_render(&s_roulette);
             break;
-        case OB_DONE:
-            ui_str_center(80,"Welcome",PBL_FG,3);
-            ui_str_center(130,s_ob_name,PBL_FG,2);
-            ui_str_center(170,"K3 to enter OS",PBL_DIM,2);
-            break;
+        case OB_DONE:{
+            for(int i=0;i<3;i++) ui_rounded_rect(LCD_W/2-26+i*22,50,16,36,5,PBL_FG);
+            ui_str_center(100,"Welcome",PBL_FG,2);
+            ui_str_center(120,s_ob_name,PBL_FG,2);
+            uint16_t ac=((s_anim/450)&1)?PBL_FG:PBL_DIM;
+            st7789_fb_circle(LCD_W/2,154,14,ac);
+            st7789_fb_circle(LCD_W/2,154,8,ac);
+            st7789_fb_circle_fill(LCD_W/2,154,3,PBL_FG);
+            ui_str_center(182,"K3 to enter OS",PBL_DIM,1);
+            break;}
     }
 }
 
@@ -826,25 +834,35 @@ static void render_wallet_app(void)
 {
     st7789_fb_fill(COLOR_BLACK); draw_status("Wallet");
     const uint8_t *pk=wallet_pubkey();
-    char p1[32], p2[32], bal[32];
-    snprintf(bal,sizeof(bal),"%.4f SOL",(double)s_balance);
-    snprintf(p1,sizeof(p1),"%02X%02X%02X%02X %02X%02X%02X%02X",pk[0],pk[1],pk[2],pk[3],pk[4],pk[5],pk[6],pk[7]);
-    snprintf(p2,sizeof(p2),"%02X%02X%02X%02X %02X%02X%02X%02X",pk[24],pk[25],pk[26],pk[27],pk[28],pk[29],pk[30],pk[31]);
+    char short_pk[20]; short_pk_hex(pk,short_pk,sizeof(short_pk));
+    char bal[24]; snprintf(bal,sizeof(bal),"%.4f",(double)s_balance);
 
-    st7789_fb_rect_outline(10,34,220,62,PBL_LINE);
-    ui_str_center(46,"Balance",PBL_DIM,1);
-    int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,60,bal,PBL_FG,3);
+    // Balance — prominent, no box
+    ui_str_center(36,"SOL BALANCE",PBL_DIM,1);
+    int bw=ui_str_width(bal,3); ui_str(LCD_W/2-bw/2,50,bal,PBL_FG,3);
+    ui_str_center(80,"SOL",PBL_DIM,1);
+    st7789_fb_hline(16,92,208,PBL_LINE);
 
-    st7789_fb_rect_outline(10,106,220,58,PBL_LINE);
-    ui_str(18,116,"Pubkey",PBL_DIM,1);
-    ui_str(18,134,p1,PBL_FG,1);
-    ui_str(18,148,p2,PBL_FG,1);
+    // Address — compact
+    ui_str_center(104,"WALLET",PBL_DIM,1);
+    int aw=ui_str_width(short_pk,1); ui_str(LCD_W/2-aw/2,118,short_pk,PBL_FG,1);
+    st7789_fb_hline(16,132,208,PBL_LINE);
 
-    uint16_t c=s_nfc_armed?PBL_FG:PBL_DIM;
-    st7789_fb_rect_outline(10,176,220,34,PBL_LINE);
-    ui_str(18,188,"Phone:",PBL_DIM,1);
-    ui_str(82,188,"Tap to share",c,1);
-    ui_str_center(224,"K4=back",PBL_DIM,1);
+    // NFC indicator — animated bars or disabled state
+    if(s_nfc_armed){
+        int phase=(s_anim/280)%3;
+        for(int i=0;i<3;i++){
+            int bh=6+i*5;
+            uint16_t c=(i==phase)?PBL_FG:PBL_LINE;
+            st7789_fb_rect(LCD_W/2-16+i*14,157-bh,10,bh,c);
+        }
+        ui_str_center(170,"TAP PHONE TO SHARE",PBL_FG,1);
+    } else {
+        ui_str_center(154,"NFC OFF",PBL_DIM,2);
+        ui_str_center(174,"enable in settings",PBL_DIM,1);
+    }
+
+    ui_str_center(206,"K4 back",PBL_DIM,1);
 }
 
 static void render_receive_app(void)
@@ -853,20 +871,33 @@ static void render_receive_app(void)
     draw_status("Receive");
 
     const uint8_t *pk=wallet_pubkey();
-    char pshort[20]; short_pk_hex(pk, pshort, sizeof(pshort));
+    char pshort[20]; short_pk_hex(pk,pshort,sizeof(pshort));
     const char *nm=wallet_name();
 
-    ui_str_center(38,nm&&nm[0]?nm:"SolWear",PBL_FG,2);
-    ui_str_center(62,"PHONE READS WATCH",PBL_DIM,1);
+    ui_str_center(32,nm&&nm[0]?nm:"SolWear",PBL_FG,2);
+    ui_str_center(54,"WALLET ADDRESS",PBL_DIM,1);
 
     int cx=LCD_W/2, cy=116;
-    for(int r=18;r<=52;r+=17) st7789_fb_circle(cx,cy,r,s_nfc_armed?PBL_FG:PBL_DIM);
-    st7789_fb_circle_fill(cx,cy,6,s_nfc_armed?PBL_FG:PBL_DIM);
-    st7789_fb_rect_outline(32,158,176,30,PBL_LINE);
-    ui_str_center(168,pshort,PBL_FG,1);
+    if(s_nfc_armed){
+        // Pulsing rings — each lights up in sequence
+        int phase=(s_anim/350)%3;
+        for(int i=0;i<3;i++){
+            int r=18+i*17;
+            uint16_t c=(i==phase)?PBL_FG:PBL_LINE;
+            st7789_fb_circle(cx,cy,r,c);
+        }
+        st7789_fb_circle_fill(cx,cy,6,PBL_FG);
+        ui_str_center(170,"hold phone within 3cm",PBL_FG,1);
+    } else {
+        for(int i=0;i<3;i++) st7789_fb_circle(cx,cy,18+i*17,PBL_LINE);
+        st7789_fb_circle_fill(cx,cy,6,PBL_DIM);
+        draw_line(cx-26,cy-26,cx+26,cy+26,PBL_DIM);
+        ui_str_center(170,"NFC disabled",PBL_DIM,1);
+    }
 
-    ui_str_center(200,s_nfc_armed?"Hold phone within 3 cm":"NFC disabled",s_nfc_armed?PBL_FG:PBL_DIM,1);
-    ui_str_center(224,"K4=back",PBL_DIM,1);
+    ui_rounded_rect_outline(28,180,184,26,4,PBL_LINE);
+    int aw=ui_str_width(pshort,1); ui_str(LCD_W/2-aw/2,190,pshort,PBL_FG,1);
+    ui_str_center(218,"K4 back",PBL_DIM,1);
 }
 
 static void render_sync_effect(void)
