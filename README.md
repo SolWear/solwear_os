@@ -1,9 +1,8 @@
 # SolWearOS
 
-SolWearOS is the embedded firmware for the SolWear transparent Solana
-smartwatch prototype. It runs on an ESP32-S3 Mini with a 240 x 240 ST7789
-display, PN532 NFC, four hardware buttons, LiPo battery sensing, and local
-wallet storage.
+SolWearOS is being rewritten in Rust for the SolWear transparent Solana
+smartwatch Prototype 2. The Rust branch targets ESP32-S3 through ESP-IDF Rust
+bindings while preserving the existing C/C++ firmware hardware contract.
 
 ## Current Prototype
 
@@ -34,23 +33,42 @@ wallet storage.
 | `components/hal_battery/` | Battery measurement HAL |
 | `components/wallet/` | Wallet and crypto helpers |
 
-## Build
+## Rust Build
 
-Install ESP-IDF, then build from the repository root:
+Install Rust, ESP-IDF, and the ESP Rust tooling:
 
-```bash
-idf.py set-target esp32s3
-idf.py build
+```powershell
+rustup default stable
+cargo install espup --locked
+espup install
+cargo install ldproxy espflash
 ```
 
-Flash a connected board:
+Host simulation checks can run without ESP hardware:
 
-```bash
-idf.py -p COM_PORT flash monitor
+```powershell
+cargo test
+cargo run
 ```
 
-Replace `COM_PORT` with the serial port for your board, for example `COM5`
-on Windows or `/dev/ttyACM0` on Linux.
+Firmware build target on Windows:
+
+```powershell
+& 'D:\VSBuildTools\Common7\Tools\Launch-VsDevShell.ps1' -Arch amd64 -HostArch amd64
+$env:RUSTUP_HOME='D:\rustup'
+$env:CARGO_HOME='D:\cargo'
+$env:TEMP='D:\tmp'
+$env:TMP='D:\tmp'
+. 'D:\espup-solwear-export.ps1'
+cargo +esp build -Z build-std=std,panic_abort --release --no-default-features --features esp-idf --target xtensa-esp32s3-espidf
+espflash flash --monitor target/xtensa-esp32s3-espidf/release/solwear-os
+```
+
+On Windows, build from a short path such as `E:\swo` because `esp-idf-sys`
+rejects long output paths.
+
+The legacy C/C++ firmware is preserved in the `cxx-stable-YYYYMMDD` release.
+The Rust protocol contract lives in `docs/firmware-protocol.md`.
 
 ## Hardware Pins
 

@@ -1,0 +1,9 @@
+[build]
+rustflags = ["--cfg", "espidf_time64"]
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+
+[env]
+MCU = "esp32s3"
+ESP_IDF_VERSION = "v6.0.1"

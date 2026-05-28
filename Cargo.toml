@@ -1,0 +1,28 @@
+[package]
+name = "solwear-os"
+version = "0.2.0-rust.0"
+edition = "2021"
+resolver = "2"
+
+[features]
+default = ["host-sim"]
+host-sim = []
+esp-idf = ["dep:esp-idf-svc", "dep:esp-idf-hal", "dep:log"]
+
+[dependencies]
+esp-idf-hal = { version = "0.45", optional = true }
+esp-idf-svc = { version = "0.51", optional = true, default-features = false, features = ["std", "alloc", "native"] }
+log = { version = "0.4", optional = true }
+
+[build-dependencies]
+embuild = "0.33"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
+[package.metadata.esp-idf-sys]
+esp_idf_tools_install_dir = "global"
+esp_idf_sdkconfig = "sdkconfig.defaults"
