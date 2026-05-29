@@ -96,7 +96,7 @@ pub fn emit_error(code: &str, message: &str) {
 
 pub fn emit_line(line: &str) {
     #[cfg(feature = "esp-idf")]
-    log::info!("{line}");
+    println!("{line}");
 
     #[cfg(not(feature = "esp-idf"))]
     println!("{line}");
@@ -105,7 +105,7 @@ pub fn emit_line(line: &str) {
 pub fn free_heap_bytes() -> u32 {
     #[cfg(feature = "esp-idf")]
     {
-        unsafe { esp_idf_svc::sys::esp_get_free_heap_size() as u32 }
+        unsafe { esp_idf_hal::sys::esp_get_free_heap_size() as u32 }
     }
 
     #[cfg(not(feature = "esp-idf"))]

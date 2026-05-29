@@ -7,12 +7,10 @@ resolver = "2"
 [features]
 default = ["host-sim"]
 host-sim = []
-esp-idf = ["dep:esp-idf-svc", "dep:esp-idf-hal", "dep:log"]
+esp-idf = ["dep:esp-idf-hal"]
 
 [dependencies]
-esp-idf-hal = { version = "0.45", optional = true }
-esp-idf-svc = { version = "0.51", optional = true, default-features = false, features = ["std", "alloc", "native"] }
-log = { version = "0.4", optional = true }
+esp-idf-hal = { version = "0.46", optional = true }
 
 [build-dependencies]
 embuild = "0.33"
@@ -25,4 +23,18 @@ strip = true
 
 [package.metadata.esp-idf-sys]
 esp_idf_tools_install_dir = "global"
+esp_idf_version = "v5.3.3"
 esp_idf_sdkconfig = "sdkconfig.defaults"
+esp_idf_components = [
+    "main",
+    "pthread",
+    "esp_timer",
+    "esp_driver_gpio",
+    "esp_driver_spi",
+    "esp_driver_i2c",
+    "esp_driver_uart",
+    "esp_adc",
+    "esp_lcd",
+    "nvs_flash",
+    "spiffs",
+]

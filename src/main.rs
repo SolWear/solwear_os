@@ -10,9 +10,8 @@ use os::SolWearOs;
 
 #[cfg(feature = "esp-idf")]
 fn platform_init() {
-    esp_idf_svc::sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
-    log::info!("SolWearOS Rust platform init complete");
+    esp_idf_hal::sys::link_patches();
+    println!("SolWearOS Rust platform init complete");
 }
 
 #[cfg(not(feature = "esp-idf"))]

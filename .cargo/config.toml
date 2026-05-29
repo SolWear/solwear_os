@@ -6,4 +6,7 @@ linker = "ldproxy"
 
 [env]
 MCU = "esp32s3"
-ESP_IDF_VERSION = "v6.0.1"
+ESP_IDF_VERSION = "v5.3.3"
+ESP_IDF_TOOLS_INSTALL_DIR = "custom:D:\\espressif"
+ESP_IDF_GLOB_PROJECT_BASE = { value = ".", relative = true }
+ESP_IDF_GLOB_PROJECT_PARTITIONS = "partitions.csv"
