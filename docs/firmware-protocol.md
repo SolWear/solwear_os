@@ -35,6 +35,10 @@ app <home|wallet|settings|stats|health|game|games|receive|nfc>
 nav home
 nav back
 reboot bootsel
+nfc status
+nfc reset
+nfc diag
+nfc power max
 ```
 
 ## Structured Results
@@ -43,6 +47,49 @@ reboot bootsel
 [RESULT] topic=<topic> status=ok message="<message>"
 [ERROR] code=<code> message="<message>"
 ```
+
+## NFC Type 4 Transaction Flow
+
+Prototype 2 exposes the watch wallet as a PN532-backed NFC Forum Type 4 tag.
+The Rust firmware preserves the legacy C APDU behavior:
+
+- SELECT NDEF application `D2 76 00 00 85 01 01`
+- SELECT CC file `E103`
+- SELECT NDEF file `E104`
+- READ BINARY (`0xB0`) and UPDATE BINARY (`0xD6`)
+- 1024-byte writable NDEF file capacity
+
+Wallet reads emit an external NDEF record:
+
+```text
+type=solwear:wallet
+payload={"version":1,"pubkey":"<base58>","network":"devnet"}
+```
+
+Sign requests are accepted when the external record type contains
+`sign_request`, including `solwear:sign_request`, `solvare:sign_request`, and
+bare `sign_request`.
+
+```text
+payload={"version":1,"tx_bytes":"<base64>","from":"...","to":"...","network":"devnet","lamports":0,"fee_lamports":0,"session_id":"..."}
+```
+
+Sign responses are queued as:
+
+```text
+type=solwear:sign_response
+payload={"version":1,"signature":"<base64-64-byte-ed25519>","session_id":"..."}
+```
+
+NFC diagnostics use structured log lines:
+
+```text
+[NFC] status enabled=<0|1> ready=<0|1> event=<event> counter=<n> target_active=<0|1> sessions=<n> apdus=<n> errors=<n> message="<text>"
+[NFC] diag path=type4-target tx_valid=<0|1> key_import=<0|1> target_len=<bytes> response_pending=<0|1> range_goal_cm=3
+```
+
+The hardware acceptance gate for this phase is reliable Type 4 signing at 3 cm
+using firmware-only PN532 timing/RF configuration changes first.
 
 ## Prototype 2 Hardware Contract
 

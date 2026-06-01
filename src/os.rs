@@ -88,6 +88,7 @@ impl SolWearOs {
             self.handle_command(command);
         }
         self.nfc.poll(&mut self.wallet);
+        self.handle_nfc_payloads();
         self.render();
         self.emit_status();
     }
@@ -139,8 +140,36 @@ impl SolWearOs {
                 self.screen = Screen::Home;
                 crate::protocol::emit_result("nav", "back");
             }
+            Command::NfcStatus => self.nfc.emit_status(),
+            Command::NfcReset => self.nfc.reset(),
+            Command::NfcDiag => self.nfc.emit_diag(),
+            Command::NfcPowerMax => self.nfc.set_power_max(),
             Command::RebootBootsel => crate::protocol::emit_result("reboot", "bootsel-requested"),
             Command::Raw(raw) => crate::protocol::emit_error("unknown-command", &raw),
+        }
+    }
+
+    fn handle_nfc_payloads(&mut self) {
+        if let Some(seed) = self.nfc.take_key_import() {
+            crate::protocol::emit_line(&format!(
+                "[NFC] key_import received seed_prefix={:02x}{:02x}{:02x}{:02x}",
+                seed[0], seed[1], seed[2], seed[3]
+            ));
+        }
+
+        if let Some(tx) = self.nfc.take_tx_payload() {
+            self.screen = Screen::Transactions;
+            crate::protocol::emit_line(&format!(
+                "[NFC] tx_request from=\"{}\" to=\"{}\" network=\"{}\" lamports={} fee={} tx_len={} session=\"{}\"",
+                tx.from, tx.to, tx.network, tx.lamports, tx.fee_lamports, tx.tx_len, tx.session_id
+            ));
+
+            let mut sig = [0u8; 64];
+            if self.wallet.sign(&tx.tx_bytes[..tx.tx_len], &mut sig) {
+                if !self.nfc.queue_sign_response(&sig, &tx.session_id) {
+                    crate::protocol::emit_error("nfc-sign-response", "queue failed");
+                }
+            }
         }
     }
 

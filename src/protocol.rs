@@ -8,6 +8,10 @@ pub enum Command {
     App(String),
     NavHome,
     NavBack,
+    NfcStatus,
+    NfcReset,
+    NfcDiag,
+    NfcPowerMax,
     RebootBootsel,
     Raw(String),
 }
@@ -46,6 +50,10 @@ pub fn parse_command(input: &str) -> Command {
         (Some("app"), Some(name), _) => Command::App(name.to_string()),
         (Some("nav"), Some("home"), _) => Command::NavHome,
         (Some("nav"), Some("back"), _) => Command::NavBack,
+        (Some("nfc"), Some("status"), _) => Command::NfcStatus,
+        (Some("nfc"), Some("reset"), _) => Command::NfcReset,
+        (Some("nfc"), Some("diag"), _) => Command::NfcDiag,
+        (Some("nfc"), Some("power"), Some("max")) => Command::NfcPowerMax,
         (Some("reboot"), Some("bootsel"), _) => Command::RebootBootsel,
         _ => Command::Raw(trimmed.into()),
     }
@@ -145,5 +153,13 @@ mod tests {
             parse_command("weird thing"),
             Command::Raw("weird thing".into())
         );
+    }
+
+    #[test]
+    fn parses_nfc_diagnostics_commands() {
+        assert_eq!(parse_command("nfc status"), Command::NfcStatus);
+        assert_eq!(parse_command("nfc reset"), Command::NfcReset);
+        assert_eq!(parse_command("nfc diag"), Command::NfcDiag);
+        assert_eq!(parse_command("nfc power max"), Command::NfcPowerMax);
     }
 }
