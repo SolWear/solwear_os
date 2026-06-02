@@ -1,7 +1,7 @@
 use crate::{
     battery::BatteryMonitor,
     buttons::{ButtonEvent, Buttons},
-    display::Display,
+    display::{Display, DisplayModel, TxOverlayModel},
     nfc::NfcService,
     protocol::{Command, StatusHeartbeat},
     wallet::Wallet,
@@ -15,9 +15,14 @@ pub struct SolWearOs {
     battery: BatteryMonitor,
     nfc: NfcService,
     wallet: Wallet,
-    uptime_sec: u64,
+    uptime_ms: u64,
     screen: Screen,
     brightness: u8,
+    home_grid: bool,
+    selected_index: usize,
+    watchface: u8,
+    balance_sol: f32,
+    tx_overlay: Option<TxOverlayState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +36,18 @@ enum Screen {
     Transactions,
     Stats,
     Games,
+    PingPong,
+    Tetris,
+    Tamagotchi,
+}
+
+#[derive(Debug, Clone)]
+struct TxOverlayState {
+    from: String,
+    to: String,
+    network: String,
+    lamports: u64,
+    fee_lamports: u64,
 }
 
 impl SolWearOs {
@@ -41,9 +58,14 @@ impl SolWearOs {
             battery: BatteryMonitor::new(),
             nfc: NfcService::new(),
             wallet: Wallet::new(),
-            uptime_sec: 0,
+            uptime_ms: 0,
             screen: Screen::Onboard,
             brightness: 80,
+            home_grid: false,
+            selected_index: 0,
+            watchface: 0,
+            balance_sol: 0.0,
+            tx_overlay: None,
         }
     }
 
@@ -79,7 +101,7 @@ impl SolWearOs {
     }
 
     fn tick(&mut self) {
-        self.uptime_sec += 1;
+        self.uptime_ms = self.uptime_ms.saturating_add(33);
         self.battery.update();
         if let Some(event) = self.buttons.poll() {
             self.handle_button(event);
@@ -96,17 +118,67 @@ impl SolWearOs {
     fn handle_button(&mut self, event: ButtonEvent) {
         match event {
             ButtonEvent::Up => self.screen = Screen::Home,
-            ButtonEvent::Down => self.screen = Screen::Stats,
-            ButtonEvent::Select => {
-                self.screen = match self.screen {
-                    Screen::Home => Screen::Wallet,
-                    Screen::Wallet => Screen::Receive,
-                    _ => Screen::Home,
+            ButtonEvent::Down => {
+                if self.screen == Screen::Home {
+                    self.home_grid = true;
+                    self.selected_index = (self.selected_index + 1).min(6);
+                } else if self.screen == Screen::Settings || self.screen == Screen::Games {
+                    self.selected_index = self.selected_index.saturating_add(1).min(
+                        if self.screen == Screen::Settings {
+                            8
+                        } else {
+                            2
+                        },
+                    );
+                } else {
+                    self.screen = Screen::Stats;
                 }
             }
-            ButtonEvent::Back => self.screen = Screen::Home,
+            ButtonEvent::Select => {
+                if self.tx_overlay.is_some() {
+                    crate::protocol::emit_result("tx", "review-requested");
+                    return;
+                }
+                match self.screen {
+                    Screen::Home if self.home_grid => self.open_selected_app(),
+                    Screen::Home => self.watchface = (self.watchface + 1) % 6,
+                    Screen::Wallet => self.screen = Screen::Receive,
+                    Screen::Settings => {
+                        if self.selected_index < 6 {
+                            self.watchface = self.selected_index as u8;
+                        }
+                    }
+                    Screen::Games => {
+                        self.screen = match self.selected_index {
+                            0 => Screen::PingPong,
+                            1 => Screen::Tetris,
+                            _ => Screen::Tamagotchi,
+                        };
+                    }
+                    Screen::PingPong | Screen::Tetris | Screen::Tamagotchi => {
+                        crate::protocol::emit_result("game", "action");
+                    }
+                    _ => self.screen = Screen::Home,
+                }
+            }
+            ButtonEvent::Back => {
+                if self.tx_overlay.take().is_some() {
+                    crate::protocol::emit_result("tx", "rejected");
+                } else if self.screen == Screen::Home && self.home_grid {
+                    self.home_grid = false;
+                } else if matches!(
+                    self.screen,
+                    Screen::PingPong | Screen::Tetris | Screen::Tamagotchi
+                ) {
+                    self.screen = Screen::Games;
+                } else {
+                    self.screen = Screen::Home;
+                }
+            }
             ButtonEvent::BackHold => self.wallet.lock(),
-            ButtonEvent::UpHold => self.nfc.toggle_enabled(),
+            ButtonEvent::UpHold => {
+                self.nfc.toggle_enabled();
+            }
         }
     }
 
@@ -134,6 +206,7 @@ impl SolWearOs {
             }
             Command::NavHome => {
                 self.screen = Screen::Home;
+                self.home_grid = false;
                 crate::protocol::emit_result("nav", "home");
             }
             Command::NavBack => {
@@ -149,6 +222,27 @@ impl SolWearOs {
         }
     }
 
+    fn open_selected_app(&mut self) {
+        self.screen = match self.selected_index {
+            0 => Screen::Wallet,
+            1 => Screen::Receive,
+            2 => Screen::Transactions,
+            3 => Screen::Stats,
+            4 => {
+                self.selected_index = 0;
+                Screen::Games
+            }
+            5 => {
+                self.selected_index = self.watchface as usize;
+                Screen::Settings
+            }
+            _ => {
+                self.wallet.lock();
+                Screen::Lock
+            }
+        };
+    }
+
     fn handle_nfc_payloads(&mut self) {
         if let Some(seed) = self.nfc.take_key_import() {
             crate::protocol::emit_line(&format!(
@@ -159,6 +253,13 @@ impl SolWearOs {
 
         if let Some(tx) = self.nfc.take_tx_payload() {
             self.screen = Screen::Transactions;
+            self.tx_overlay = Some(TxOverlayState {
+                from: tx.from.clone(),
+                to: tx.to.clone(),
+                network: tx.network.clone(),
+                lamports: tx.lamports,
+                fee_lamports: tx.fee_lamports,
+            });
             crate::protocol::emit_line(&format!(
                 "[NFC] tx_request from=\"{}\" to=\"{}\" network=\"{}\" lamports={} fee={} tx_len={} session=\"{}\"",
                 tx.from, tx.to, tx.network, tx.lamports, tx.fee_lamports, tx.tx_len, tx.session_id
@@ -175,9 +276,7 @@ impl SolWearOs {
 
     fn render(&mut self) {
         self.display.begin_frame();
-        self.display
-            .draw_status_bar(self.battery.percent(), self.battery.charging());
-        self.display.draw_screen(match self.screen {
+        let screen_name = match self.screen {
             Screen::Onboard => "Onboard",
             Screen::Lock => "Locked",
             Screen::Home => "Home",
@@ -187,7 +286,33 @@ impl SolWearOs {
             Screen::Transactions => "Transactions",
             Screen::Stats => "Stats",
             Screen::Games => "Games",
+            Screen::PingPong => "Ping Pong",
+            Screen::Tetris => "Tetris",
+            Screen::Tamagotchi => "Tamagotchi",
+        };
+        let tx_overlay = self.tx_overlay.as_ref().map(|tx| TxOverlayModel {
+            from: tx.from.as_str(),
+            to: tx.to.as_str(),
+            network: tx.network.as_str(),
+            lamports: tx.lamports,
+            fee_lamports: tx.fee_lamports,
         });
+        let pubkey_short = self.wallet.public_key_short();
+        let model = DisplayModel {
+            screen: screen_name,
+            home_slide_grid: self.home_grid,
+            selected_index: self.selected_index,
+            watchface: self.watchface,
+            battery_pct: self.battery.percent(),
+            charging: self.battery.charging(),
+            nfc_armed: self.nfc.enabled(),
+            uptime_sec: self.uptime_ms / 1000,
+            wallet_name: self.wallet.name(),
+            pubkey_short: &pubkey_short,
+            balance_sol: self.balance_sol,
+            tx_overlay,
+        };
+        self.display.draw_legacy(&model);
         self.display.flush();
     }
 
@@ -203,7 +328,7 @@ impl SolWearOs {
             voltage: self.battery.millivolts() as f32 / 1000.0,
             heap_bytes: crate::protocol::free_heap_bytes(),
             steps: 0,
-            uptime_sec: self.uptime_sec,
+            uptime_sec: self.uptime_ms / 1000,
             charging: self.battery.charging(),
             temperature_c: None,
             proto: "prototype-2-esp32s3-lcd13",

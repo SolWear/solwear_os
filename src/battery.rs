@@ -31,14 +31,30 @@ impl BatteryMonitor {
     }
 
     pub fn percent(&self) -> u8 {
-        if self.millivolts <= BAT_EMPTY_MV {
-            return 0;
+        const TABLE: &[(u16, u8)] = &[
+            (4200, 100),
+            (4100, 90),
+            (4000, 80),
+            (3900, 70),
+            (3800, 60),
+            (3700, 50),
+            (3600, 35),
+            (3500, 20),
+            (3400, 10),
+            (3300, 5),
+            (3000, 0),
+        ];
+        let mv = self.millivolts.clamp(BAT_EMPTY_MV, BAT_FULL_MV);
+        for pair in TABLE.windows(2) {
+            let (hi_mv, hi_pct) = pair[0];
+            let (lo_mv, lo_pct) = pair[1];
+            if mv >= lo_mv {
+                let span_mv = hi_mv - lo_mv;
+                let span_pct = hi_pct - lo_pct;
+                return lo_pct + (((mv - lo_mv) as u32 * span_pct as u32) / span_mv as u32) as u8;
+            }
         }
-        if self.millivolts >= BAT_FULL_MV {
-            return 100;
-        }
-        (((self.millivolts - BAT_EMPTY_MV) as u32 * 100) / (BAT_FULL_MV - BAT_EMPTY_MV) as u32)
-            as u8
+        0
     }
 
     pub fn millivolts(&self) -> u16 {

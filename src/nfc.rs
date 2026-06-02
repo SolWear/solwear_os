@@ -180,6 +180,10 @@ impl NfcService {
         crate::protocol::emit_result("nfc", if self.enabled { "enabled" } else { "disabled" });
     }
 
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
     pub fn set_power_max(&mut self) {
         #[cfg(feature = "esp-idf")]
         {
