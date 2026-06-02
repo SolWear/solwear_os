@@ -372,9 +372,7 @@ fn draw_status_bar_raw(uptime_sec: u64, battery_pct: u8, charging: bool, title: 
 
 #[cfg(feature = "esp-idf")]
 fn render_onboard(frame: u64) {
-    for i in 0..3 {
-        rounded_rect(LCD_W as i32 / 2 - 26 + i * 22, 58, 16, 36, 5, COLOR_WHITE);
-    }
+    solwear_logo(LCD_W as i32 / 2, 56, 46, COLOR_WHITE);
     text_center(108, "SOLWEAR", COLOR_WHITE, 2);
     text_center(128, "Solana Hardware Wallet", COLOR_DIM, 1);
     hline(40, 148, 160, COLOR_LINE);
@@ -474,9 +472,7 @@ fn render_watchface(frame: u64, model: &DisplayModel<'_>) {
             text_center(198, "K3 CYCLES FACE", COLOR_DIM, 1);
         }
         _ => {
-            for i in 0..3 {
-                rounded_rect(120 - 26 + i * 22, 50, 16, 36, 5, COLOR_WHITE);
-            }
+            solwear_logo(120, 50, 38, COLOR_WHITE);
             text_center(98, "SOLWEAR", COLOR_DIM, 1);
             let tw = text_width(&time, 4);
             text((LCD_W as i32 - tw) / 2, 112, &time, COLOR_WHITE, 4);
@@ -843,6 +839,21 @@ fn rounded_rect(x: i32, y: i32, w: i32, h: i32, r: i32, color: u16) {
         hline(x + r - dx, y + h - r + dy - 1, dx + 1, color);
         hline(x + w - r, y + h - r + dy - 1, dx + 1, color);
     }
+}
+
+#[cfg(feature = "esp-idf")]
+fn solwear_logo(cx: i32, y: i32, height: i32, color: u16) {
+    let w1 = height * 42 / 46;
+    let w2 = height * 34 / 46;
+    let w3 = height * 22 / 46;
+    let gap1 = height * 16 / 46;
+    let gap2 = height * 14 / 46;
+    let total = w1 + gap1 + w2 + gap2 + w3;
+    let x = cx - total / 2;
+
+    rounded_rect(x, y, w1, height, w1 / 2, color);
+    rounded_rect(x + w1 + gap1, y, w2, height, w2 / 2, color);
+    rounded_rect(x + w1 + gap1 + w2 + gap2, y, w3, height, w3 / 2, color);
 }
 
 #[cfg(feature = "esp-idf")]

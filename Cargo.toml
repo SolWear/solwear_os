@@ -1,6 +1,6 @@
 [package]
 name = "solwear-os"
-version = "0.2.0-rust.0"
+version = "1.5.0"
 edition = "2021"
 resolver = "2"
 

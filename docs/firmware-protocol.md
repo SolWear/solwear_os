@@ -5,7 +5,7 @@ This protocol is the stable contract between SolWearOS Rust firmware and `solwea
 ## Boot Banner
 
 ```text
-SolWearOS v0.2.0-rust.0 proto=prototype-2-esp32s3-lcd13 mcu=esp32s3 display=st7789-240x240-color caps=status,watch-control,apps,nfc,battery,charging
+SolWearOS v1.5R proto=prototype-2-esp32s3-lcd13 mcu=esp32s3 display=st7789-240x240-color caps=status,watch-control,apps,nfc,battery,charging
 ```
 
 ## Status Heartbeat

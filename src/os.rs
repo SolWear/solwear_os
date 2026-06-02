@@ -7,7 +7,7 @@ use crate::{
     wallet::Wallet,
 };
 
-const VERSION: &str = "0.2.0-rust.0";
+const VERSION: &str = "1.5R";
 
 pub struct SolWearOs {
     display: Display,
