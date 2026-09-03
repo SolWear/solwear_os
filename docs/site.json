@@ -1,0 +1,35 @@
+{
+  "title": "SolWear OS",
+  "version": "v0.1",
+  "repo": "https://github.com/SolWear",
+  "footer": "SolWear OS documentation. Licensed under Apache-2.0.",
+  "nav": [
+    {
+      "title": "Start here",
+      "items": [
+        { "title": "Overview", "src": "pages/index.md", "out": "index.html" },
+        { "title": "Getting Started", "src": "pages/getting-started.md", "out": "getting-started.html" },
+        { "title": "Installing the SDK", "src": "pages/installing-the-sdk.md", "out": "installing-the-sdk.html" },
+        { "title": "Your First Watchface", "src": "pages/your-first-watchface.md", "out": "your-first-watchface.html" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "items": [
+        { "title": "App Manifest Reference", "src": "pages/app-manifest-reference.md", "out": "app-manifest-reference.html" },
+        { "title": "Package Format and Signing", "src": "pages/package-format-and-signing.md", "out": "package-format-and-signing.html" },
+        { "title": "JSON-RPC API Reference", "src": "pages/json-rpc-api-reference.md", "out": "json-rpc-api-reference.html" },
+        { "title": "Capabilities and Security", "src": "pages/capabilities-and-security.md", "out": "capabilities-and-security.html" },
+        { "title": "Architecture Specification", "src": "ARCHITECTURE.md", "out": "architecture.html" }
+      ]
+    },
+    {
+      "title": "Guides",
+      "items": [
+        { "title": "Using the Emulator", "src": "pages/using-the-emulator.md", "out": "using-the-emulator.html" },
+        { "title": "Publishing to the Store", "src": "pages/publishing-to-the-store.md", "out": "publishing-to-the-store.html" },
+        { "title": "Flashing a Raspberry Pi", "src": "pages/flashing-a-raspberry-pi.md", "out": "flashing-a-raspberry-pi.html" }
+      ]
+    }
+  ]
+}

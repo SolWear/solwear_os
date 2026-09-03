@@ -1,0 +1,26 @@
+{
+  "id": "pi-round-480",
+  "label": "Round 480 (Pi 4 + 4in round DSI)",
+  "device": "solwear-round-480",
+  "screen": { "width": 480, "height": 480, "shape": "round" },
+  "bezel": {
+    "style": "round",
+    "body": "#15171c",
+    "rim": "#33373f",
+    "thickness": 26,
+    "strap": true
+  },
+  "window": { "width": 620, "height": 760 },
+  "buttons": [
+    { "id": "side", "label": "Crown", "edge": "right", "offset": 0.34, "length": 0.14 },
+    { "id": "back", "label": "Back", "edge": "right", "offset": 0.62, "length": 0.09 }
+  ],
+  "mock": {
+    "batteryPercent": 76,
+    "charging": false,
+    "batteryDrainPerHour": 4,
+    "brightness": 80,
+    "steps": 3120,
+    "seed": 1591405038
+  }
+}

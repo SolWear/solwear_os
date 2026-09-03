@@ -1,0 +1,27 @@
+{
+  "id": "pi-wide-800x480",
+  "label": "Wide 800x480 (Pi 5 + 7in DSI panel)",
+  "device": "solwear-wide-800",
+  "screen": { "width": 800, "height": 480, "shape": "rect" },
+  "bezel": {
+    "style": "panel",
+    "body": "#0d0f13",
+    "rim": "#262a31",
+    "thickness": 20,
+    "radius": 0.05,
+    "strap": false
+  },
+  "window": { "width": 940, "height": 660 },
+  "buttons": [
+    { "id": "back", "label": "Back", "edge": "bottom", "offset": 0.34, "length": 0.1 },
+    { "id": "select", "label": "Select", "edge": "bottom", "offset": 0.56, "length": 0.1 }
+  ],
+  "mock": {
+    "batteryPercent": 91,
+    "charging": true,
+    "batteryDrainPerHour": 3,
+    "brightness": 100,
+    "steps": 120,
+    "seed": 250912441
+  }
+}

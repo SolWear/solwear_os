@@ -1,0 +1,12 @@
+// The daemon reads network state through nmcli. Without an active login
+// session polkit would refuse, so the solwear user is granted the read-only
+// NetworkManager actions it needs and nothing more.
+polkit.addRule(function (action, subject) {
+  if (subject.user !== "solwear") {
+    return polkit.Result.NOT_HANDLED;
+  }
+  if (action.id === "org.freedesktop.NetworkManager.wifi.scan") {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});

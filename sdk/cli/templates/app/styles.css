@@ -1,0 +1,78 @@
+/*
+ * Everything here is sized from --sw-base, the smaller screen dimension, which
+ * the SDK's layout() helper sets on the root element. That is what lets one
+ * stylesheet work on a 240x240 round watch and on an 800x480 panel. Resist the
+ * urge to add a pixel constant.
+ */
+
+:root {
+  --ink: #f2f4f8;
+  --muted: #8c93a1;
+  --accent: #22d3a6;
+  --bg: #06070a;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.screen {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* On a round screen --sw-safe keeps content out of the clipped corners. */
+.safe {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--sw-base) * 0.02);
+  padding: var(--sw-safe);
+  max-width: 100%;
+  text-align: center;
+}
+
+h1 {
+  font-size: calc(var(--sw-base) * 0.075);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.clock {
+  font-size: calc(var(--sw-base) * 0.2);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  font-weight: 300;
+}
+
+.line {
+  font-size: calc(var(--sw-base) * 0.06);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.line strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* A wide panel has room for a horizontal arrangement. */
+:root[data-shape="rect"] .safe {
+  gap: calc(var(--sw-base) * 0.03);
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solwear.tech/schema/manifest.schema.json",
+  "title": "SolWear application manifest",
+  "description": "manifest.json at the root of a .swa package. See docs/pages/app-manifest-reference.md and section 5 of the architecture specification.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "sdk",
+    "type",
+    "entry",
+    "capabilities",
+    "author",
+    "description"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Reverse-DNS application identifier. Immutable once published.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name shown in the launcher and the store.",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version, MAJOR.MINOR.PATCH, no v prefix.",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sdk": {
+      "type": "string",
+      "description": "The @solwear/sdk line this app was built against.",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "enum": ["0.1"]
+    },
+    "type": {
+      "type": "string",
+      "description": "app or watchface.",
+      "enum": ["app", "watchface"]
+    },
+    "entry": {
+      "type": "string",
+      "description": "HTML entry point, relative to the archive root. May not escape the archive.",
+      "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+\\.html$",
+      "maxLength": 256
+    },
+    "icon": {
+      "type": "string",
+      "description": "PNG icon, relative to the archive root. Optional for sideload, expected for the store.",
+      "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+\\.png$",
+      "maxLength": 256
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Capability names. Each maps to a JSON-RPC method prefix.",
+      "uniqueItems": true,
+      "maxItems": 7,
+      "items": {
+        "type": "string",
+        "enum": [
+          "system",
+          "power",
+          "display",
+          "sensors",
+          "notifications",
+          "apps",
+          "wallet"
+        ]
+      }
+    },
+    "author": {
+      "type": "string",
+      "description": "Publisher name. Must match the registry entry's publisher field.",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "description": "One sentence, shown in the store listing.",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  }
+}

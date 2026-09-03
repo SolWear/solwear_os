@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {
+      "id": "tech.solwear.signer",
+      "name": "SolWear Signer",
+      "version": "0.1.0",
+      "sdk": "0.1",
+      "type": "app",
+      "url": "https://packages.solwear.tech/tech.solwear.signer/tech.solwear.signer-0.1.0.swa",
+      "sha256": "fd6f44810e6d5dfac4e2c8504bf210c52115ad543feccc8bc9cf78805243bc71",
+      "publisher": "SolWear",
+      "publisherKey": "rCN3sJOFaf/WSBhvcxitAXv72wsbI7HR24xBkJJdUd0=",
+      "description": "Demonstrates wearer-confirmed Solana message signing."
+    },
+    {
+      "id": "tech.solwear.store",
+      "name": "SolWear Store",
+      "version": "0.1.0",
+      "sdk": "0.1",
+      "type": "app",
+      "url": "https://packages.solwear.tech/tech.solwear.store/tech.solwear.store-0.1.0.swa",
+      "sha256": "3353956e7dc4c4536395575364e736e7301e0a6b6a9b5282e6e93a326cc5fa63",
+      "publisher": "SolWear",
+      "publisherKey": "rCN3sJOFaf/WSBhvcxitAXv72wsbI7HR24xBkJJdUd0=",
+      "description": "Lists installed apps and performs integrity-bound package installs."
+    },
+    {
+      "id": "tech.solwear.watchface",
+      "name": "SolWear Face",
+      "version": "0.1.0",
+      "sdk": "0.1",
+      "type": "watchface",
+      "url": "https://packages.solwear.tech/tech.solwear.watchface/tech.solwear.watchface-0.1.0.swa",
+      "sha256": "d9c5e9c8347273b3caed0ea9acb757176f7ebc9cb244453691201fa29cd7b9b8",
+      "publisher": "SolWear",
+      "publisherKey": "rCN3sJOFaf/WSBhvcxitAXv72wsbI7HR24xBkJJdUd0=",
+      "description": "Adaptive reference watchface for round and wide displays."
+    }
+  ]
+}

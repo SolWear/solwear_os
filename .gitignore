@@ -1,0 +1,73 @@
+# ---- Rust ----
+target/
+**/*.rs.bk
+*.pdb
+Cargo.lock.orig
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+.cache/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.eslintcache
+coverage/
+.nyc_output/
+.vite/
+*.vsix
+
+# ---- SolWear build outputs ----
+docs/dist/
+image/out/
+image/work/
+*.swa
+# The first-party packages the registry index pins are an exception: their
+# SHA-256 digests are published in index.json, so the exact bytes have to be
+# reviewable and verifiable from a clean clone.
+!store/registry/packages/*.swa
+*.img
+*.img.xz
+artifacts/
+
+# ---- Secrets and signing keys ----
+# Signing keys must never enter the repository.
+*.pem
+*.key
+*.key.json
+!**/testdata/**/*.key
+!**/testdata/**/*.key.json
+secrets/
+.env
+.env.local
+.env.*.local
+
+# ---- Editors ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+*.swp
+*.swo
+
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+Icon?
+
+# ---- Linux / Windows cruft ----
+*~
+Thumbs.db
+
+# Business documents, kept out of the platform repository
+SolWear_Business_Plan_Package.zip

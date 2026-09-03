@@ -1,0 +1,97 @@
+/*
+ * A watchface is the one surface that is always on screen, so it is sized
+ * entirely from --sw-base (the smaller screen dimension) and uses --sw-safe to
+ * stay clear of a round bezel. No pixel constants anywhere.
+ */
+
+:root {
+  --ink: #ffffff;
+  --muted: #7d8494;
+  --accent: #22d3a6;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: #000;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+.screen {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--sw-safe);
+}
+
+.face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--sw-base) * 0.03);
+}
+
+.time {
+  display: flex;
+  align-items: baseline;
+  font-size: calc(var(--sw-base) * 0.32);
+  font-weight: 200;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+#colon {
+  color: var(--accent);
+  /* The colon blinks with the seconds, which is the cheapest way to show the
+     face is live without repainting anything else. */
+  transition: opacity 120ms linear;
+}
+
+#colon.off {
+  opacity: 0.2;
+}
+
+.date {
+  font-size: calc(var(--sw-base) * 0.06);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+.battery {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--sw-base) * 0.02);
+  font-size: calc(var(--sw-base) * 0.045);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  width: calc(var(--sw-base) * 0.22);
+  height: calc(var(--sw-base) * 0.022);
+  border-radius: 999px;
+  background: #23262e;
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 400ms ease;
+}
+
+.bar i.low {
+  background: #f97066;
+}

@@ -1,0 +1,581 @@
+/*
+ * SolWear shell styling.
+ *
+ * Two rules govern everything here: no pixel constants, and no expensive
+ * paint. Sizes are multiples of --u (one percent of the smaller screen
+ * dimension) set by layout.ts, and there are no blurs or large shadows, which
+ * are the usual reason a Pi 4 drops frames.
+ */
+
+:root {
+  --u: 4.8px;
+  --inset: 40px;
+  --corner: 50%;
+
+  --ink: #f4f6f8;
+  --ink-dim: #9aa4b0;
+  --ink-faint: #626c78;
+  --bg: #05070a;
+  --panel: #11151b;
+  --panel-high: #1a2029;
+  --line: #232a34;
+  --accent: #4dd6a1;
+  --accent-ink: #04120c;
+  --warn: #ff6b5e;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: var(--ink);
+  font-family: "Inter", "Roboto", "Helvetica Neue", system-ui, sans-serif;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#device {
+  position: relative;
+  width: var(--screen-w);
+  height: var(--screen-h);
+  border-radius: var(--corner);
+  overflow: hidden;
+  background:
+    radial-gradient(120% 100% at 50% 0%, #131a24 0%, var(--bg) 62%);
+  transform: scale(var(--scale, 1));
+  transform-origin: center;
+}
+
+.root {
+  position: absolute;
+  inset: 0;
+  padding: var(--inset);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2);
+}
+
+/* --- status bar --------------------------------------------------------- */
+
+.status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+  font-size: calc(var(--u) * 4.6);
+  letter-spacing: 0.02em;
+  color: var(--ink-dim);
+  min-height: calc(var(--u) * 7);
+}
+
+.status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.6);
+}
+
+.dot {
+  width: calc(var(--u) * 1.8);
+  height: calc(var(--u) * 1.8);
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-live {
+  background: var(--accent);
+}
+
+.dot-dead {
+  background: var(--warn);
+}
+
+.battery.charging {
+  color: var(--accent);
+}
+
+/* --- shared surface ----------------------------------------------------- */
+
+.surface {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- watchface ---------------------------------------------------------- */
+
+.watchface {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 2);
+  text-align: center;
+}
+
+.clock {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.5);
+}
+
+.clock-time {
+  font-size: calc(var(--u) * 22);
+  font-weight: 250;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-seconds {
+  font-size: calc(var(--u) * 7);
+  font-weight: 400;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-date {
+  font-size: calc(var(--u) * 5);
+  color: var(--ink-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.watchface-meta {
+  display: flex;
+  gap: calc(var(--u) * 4);
+  width: 100%;
+  max-width: calc(var(--u) * 78);
+  justify-content: center;
+}
+
+.meter {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.8);
+  align-items: flex-start;
+  text-align: left;
+}
+
+.meter-label {
+  font-size: calc(var(--u) * 3.4);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+
+.meter-value {
+  font-size: calc(var(--u) * 4.6);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.meter-track {
+  width: 100%;
+  height: calc(var(--u) * 1);
+  border-radius: calc(var(--u) * 0.5);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.hint {
+  font-size: calc(var(--u) * 3.6);
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+
+.pill {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 4);
+  font-size: calc(var(--u) * 3.8);
+  font-family: inherit;
+}
+
+/* --- pages -------------------------------------------------------------- */
+
+.page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2);
+}
+
+.page-title {
+  margin: 0;
+  font-size: calc(var(--u) * 6);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.page-body::-webkit-scrollbar {
+  display: none;
+}
+
+.back {
+  flex: 0 0 auto;
+  align-self: center;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: calc(var(--u) * 3.6);
+  border-radius: 999px;
+  padding: calc(var(--u) * 1.2) calc(var(--u) * 5);
+}
+
+.empty {
+  color: var(--ink-faint);
+  font-size: calc(var(--u) * 4);
+  line-height: 1.5;
+  margin: calc(var(--u) * 4) 0;
+}
+
+/* --- launcher ----------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 24), 1fr));
+  gap: calc(var(--u) * 2.4);
+  padding-bottom: calc(var(--u) * 2);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 1.2);
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--u) * 4);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: inherit;
+  padding: calc(var(--u) * 1.5);
+}
+
+.tile:active {
+  background: var(--panel-high);
+}
+
+.tile-glyph {
+  font-size: calc(var(--u) * 7);
+  font-weight: 500;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.tile-icon {
+  width: calc(var(--u) * 9);
+  height: calc(var(--u) * 9);
+  object-fit: contain;
+}
+
+.tile-name {
+  font-size: calc(var(--u) * 3.2);
+  color: var(--ink-dim);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- lists, cards, settings --------------------------------------------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.6);
+  padding-bottom: calc(var(--u) * 2);
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: calc(var(--u) * 3);
+  background: var(--panel);
+  padding: calc(var(--u) * 2.4);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.8);
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+}
+
+.card-title {
+  font-size: calc(var(--u) * 4.2);
+  font-weight: 500;
+}
+
+.card-time,
+.card-source {
+  font-size: calc(var(--u) * 3);
+  color: var(--ink-faint);
+}
+
+.card-body {
+  margin: 0;
+  font-size: calc(var(--u) * 3.6);
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+  border-bottom: 1px solid var(--line);
+  padding: calc(var(--u) * 2) 0;
+}
+
+.row-label {
+  font-size: calc(var(--u) * 3.8);
+  color: var(--ink-dim);
+  flex: 0 0 auto;
+}
+
+.row-control {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.value {
+  font-size: calc(var(--u) * 3.6);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: "SFMono-Regular", "Roboto Mono", ui-monospace, monospace;
+}
+
+.slider {
+  width: calc(var(--u) * 36);
+  max-width: 60%;
+  accent-color: var(--accent);
+}
+
+.select {
+  background: var(--panel-high);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--u) * 1.6);
+  font-family: inherit;
+  font-size: calc(var(--u) * 3.4);
+  padding: calc(var(--u) * 0.8) calc(var(--u) * 1.6);
+  max-width: 60%;
+}
+
+/* --- app sandbox -------------------------------------------------------- */
+
+.app-stage {
+  position: absolute;
+  inset: calc(var(--inset) * -1);
+  top: calc(var(--u) * -2);
+}
+
+.watchface-stage {
+  inset: calc(var(--inset) * -1);
+}
+
+.app-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+  display: block;
+}
+
+/* --- wallet confirmation ------------------------------------------------ */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--inset);
+  background: rgba(2, 4, 7, 0.94);
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.confirm {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.6);
+  text-align: center;
+  align-items: center;
+}
+
+.confirm-title {
+  margin: 0;
+  font-size: calc(var(--u) * 6);
+  font-weight: 500;
+}
+
+.confirm-app {
+  margin: 0;
+  font-size: calc(var(--u) * 3.4);
+  color: var(--ink-faint);
+}
+
+.confirm-detail {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: calc(var(--u) * 0.6) calc(var(--u) * 2);
+  margin: 0;
+  width: 100%;
+  font-size: calc(var(--u) * 3.2);
+  text-align: left;
+}
+
+.confirm-detail dt {
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.confirm-detail dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: calc(var(--u) * 2);
+  width: 100%;
+  margin-top: calc(var(--u) * 1);
+}
+
+.button {
+  flex: 1 1 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: calc(var(--u) * 2) calc(var(--u) * 2);
+  font-family: inherit;
+  font-size: calc(var(--u) * 4);
+  font-weight: 500;
+}
+
+.button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.button.ghost {
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+/* --- shape and orientation adaptations ---------------------------------- */
+
+/* On a round panel the corners are clipped, so the status bar and the back
+   button move inward and the launcher drops to two columns. */
+:root[data-shape="round"] .status-bar {
+  padding: 0 calc(var(--u) * 3);
+}
+
+:root[data-shape="round"] .grid {
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 28), 1fr));
+}
+
+:root[data-shape="round"] .page-title {
+  text-align: center;
+}
+
+/* A wide panel has room to put the clock beside its readouts. */
+:root[data-orientation="wide"] .watchface {
+  flex-direction: row;
+  justify-content: space-evenly;
+  gap: calc(var(--u) * 6);
+}
+
+:root[data-orientation="wide"] .watchface-meta {
+  flex-direction: column;
+  max-width: calc(var(--u) * 45);
+  gap: calc(var(--u) * 3);
+}
+
+:root[data-orientation="wide"] .clock-time {
+  font-size: calc(var(--u) * 26);
+}
+
+:root[data-orientation="wide"] .grid {
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 20), 1fr));
+}
+
+/* Below roughly 300 px the panel cannot carry secondary readouts. */
+@media (max-width: 320px), (max-height: 320px) {
+  .watchface-meta {
+    display: none;
+  }
+
+  .clock-seconds {
+    display: none;
+  }
+}

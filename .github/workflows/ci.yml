@@ -1,0 +1,326 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # The daemon lives here; every Rust step points at it explicitly so the
+  # workflow does not depend on a workspace manifest at the repository root.
+  DAEMON_MANIFEST: os/solweard/Cargo.toml
+
+jobs:
+  # ---------------------------------------------------------------------
+  # The registry gates what gets installed on people's devices. It has no
+  # dependencies and no prerequisites, so it runs first and always.
+  # ---------------------------------------------------------------------
+  registry:
+    name: Registry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Validate the published registry
+        run: node store/registry/validate.mjs
+
+      - name: Run the validator fixture tests
+        run: node store/registry/test.mjs
+
+      # The first-party packages the index pins are checked in under
+      # store/registry/packages, so this verifies the exact bytes in the tree
+      # with no network. Once a package is hosted, drop --offline (or use
+      # --no-packages-dir) to check what is actually served.
+      - name: Verify package hashes and signatures
+        run: node store/registry/verify-packages.mjs --offline
+
+  # ---------------------------------------------------------------------
+  # The documentation site is dependency-free by design, so this job is a
+  # straight `node docs/build.mjs`. The build fails on a broken internal
+  # link or a missing page, which is most of what we want it to catch.
+  # ---------------------------------------------------------------------
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Build the documentation site
+        run: node docs/build.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: docs/dist
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # The Rust system daemon. Guarded on the manifest existing so that the
+  # workflow is correct both before and after os/solweard lands.
+  # ---------------------------------------------------------------------
+  daemon:
+    name: Daemon (solweard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Look for the daemon
+        id: probe
+        run: |
+          if [ -f "$DAEMON_MANIFEST" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Daemon skipped::$DAEMON_MANIFEST does not exist yet; nothing to build."
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.probe.outputs.present == 'true'
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.probe.outputs.present == 'true'
+        with:
+          workspaces: os/solweard
+
+      - name: Check formatting
+        if: steps.probe.outputs.present == 'true'
+        run: cargo fmt --manifest-path "$DAEMON_MANIFEST" --all -- --check
+
+      - name: Lint
+        if: steps.probe.outputs.present == 'true'
+        run: cargo clippy --manifest-path "$DAEMON_MANIFEST" --all-targets --all-features -- -D warnings
+
+      - name: Build
+        if: steps.probe.outputs.present == 'true'
+        run: cargo build --manifest-path "$DAEMON_MANIFEST" --locked --all-features
+
+      - name: Test
+        if: steps.probe.outputs.present == 'true'
+        env:
+          # No component may require hardware to run its tests.
+          SOLWEAR_HAL: mock
+        run: cargo test --manifest-path "$DAEMON_MANIFEST" --all-features
+
+  # ---------------------------------------------------------------------
+  # The shell, the SDK, the CLI, the apps and the emulator. All of them
+  # live in one npm workspace, so this is one job over the whole tree.
+  # ---------------------------------------------------------------------
+  node:
+    name: Shell, SDK, CLI and apps
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v5
+
+      # Components are independent npm packages today. If a workspace root
+      # ever appears, this job uses it instead and stops walking the tree.
+      - name: Find the Node components
+        id: probe
+        run: |
+          if [ -f package.json ]; then
+            echo "Root package.json found; building the repository as one workspace."
+            printf '.\n' > components.txt
+          else
+            find os sdk emulator apps store docs -maxdepth 2 -name package.json \
+              -not -path '*/node_modules/*' -printf '%h\n' 2>/dev/null | sort -u > components.txt || true
+          fi
+          # Apps invoke the local CLI, and the CLI resolves the local SDK while
+          # building them. A lexical walk starts with apps/ and only succeeds
+          # on developer machines that happen to have ignored dist/ output.
+          # Put those two build-time prerequisites first for a clean checkout.
+          if [ -s components.txt ] && ! grep -qx '\.' components.txt; then
+            awk '
+              $0 == "sdk/runtime" { print "10\t" $0; next }
+              $0 == "sdk/cli"     { print "20\t" $0; next }
+                                      { print "30\t" $0 }
+            ' components.txt | sort -k1,1n -k2,2 | cut -f2- > components.ordered.txt
+            mv components.ordered.txt components.txt
+          fi
+          if [ ! -s components.txt ]; then
+            echo "::notice title=Nothing to build::No Node component has a package.json yet."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            sed 's/^/  /' components.txt
+          fi
+          if find . -name package-lock.json -not -path '*/node_modules/*' | grep -q .; then
+            echo "cache=npm" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v5
+        if: steps.probe.outputs.found == 'true'
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: ${{ steps.probe.outputs.cache }}
+          cache-dependency-path: "**/package-lock.json"
+
+      - name: Install, lint, type check, build and test each component
+        if: steps.probe.outputs.found == 'true'
+        env:
+          # No component may require hardware to run its tests.
+          SOLWEAR_HAL: mock
+        run: |
+          set -euo pipefail
+          while IFS= read -r dir; do
+            echo "::group::$dir"
+            pushd "$dir" > /dev/null
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              echo "::warning title=No lockfile::$dir has no package-lock.json; falling back to npm install."
+              npm install
+            fi
+            npm run lint --if-present
+            npm run typecheck --if-present
+            npm run build --if-present
+            npm test --if-present
+            popd > /dev/null
+            echo "::endgroup::"
+          done < components.txt
+
+  # ---------------------------------------------------------------------
+  # The whole stack in one process tree: the compiled daemon against the mock
+  # HAL, packages built and signed by the real CLI, and the real JSON-RPC and
+  # asset servers on ephemeral ports. No hardware and no QEMU.
+  # ---------------------------------------------------------------------
+  e2e:
+    name: End to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: os/solweard
+
+      # The test drives the global WebSocket client, which Node 22 provides
+      # without a flag.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: "**/package-lock.json"
+
+      - name: Build the components the test drives
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path "$DAEMON_MANIFEST" --locked
+          for component in sdk/runtime sdk/cli os/shell; do
+            npm --prefix "$component" ci
+            npm --prefix "$component" run build
+          done
+
+      - name: Run the end-to-end test
+        run: tests/e2e/run.sh --no-build
+
+  # ---------------------------------------------------------------------
+  # Repository-wide hygiene that does not belong to any one component.
+  # ---------------------------------------------------------------------
+  lint:
+    name: Repository lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Every JSON file parses
+        run: |
+          status=0
+          while IFS= read -r file; do
+            if ! node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$file"; then
+              echo "::error file=$file::not valid JSON"
+              status=1
+            fi
+          done < <(git ls-files '*.json')
+          exit $status
+
+      - name: Every YAML workflow parses
+        run: |
+          if ! python3 -c "import yaml" 2>/dev/null; then
+            echo "::notice title=YAML check skipped::PyYAML is not available on this runner."
+            exit 0
+          fi
+          status=0
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -e "$file" ] || continue
+            if ! python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$file"; then
+              echo "::error file=$file::not valid YAML"
+              status=1
+            fi
+          done
+          exit $status
+
+      # Markdown is exempt: .editorconfig keeps trailing whitespace there,
+      # because two trailing spaces are a hard line break.
+      - name: No trailing whitespace in code and configuration
+        run: |
+          if git ls-files '*.json' '*.yml' '*.yaml' '*.mjs' '*.ts' '*.rs' '*.css' | xargs -r grep -n '[[:space:]]$'; then
+            echo "::error::trailing whitespace found; see .editorconfig"
+            exit 1
+          fi
+
+      - name: No signing keys committed
+        run: |
+          if git ls-files | grep -E '\.(pem|key|key\.json|p12|pfx)$' | grep -v '/testdata/'; then
+            echo "::error::a key-shaped file is tracked; signing keys must never enter the repository"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------
+  # A single required status check for branch protection to point at.
+  # ---------------------------------------------------------------------
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    needs: [registry, docs, daemon, node, e2e, lint]
+    if: always()
+    steps:
+      - name: Fail if any job failed
+        run: |
+          echo "registry: ${{ needs.registry.result }}"
+          echo "docs:     ${{ needs.docs.result }}"
+          echo "daemon:   ${{ needs.daemon.result }}"
+          echo "node:     ${{ needs.node.result }}"
+          echo "e2e:      ${{ needs.e2e.result }}"
+          echo "lint:     ${{ needs.lint.result }}"
+          for result in \
+            "${{ needs.registry.result }}" \
+            "${{ needs.docs.result }}" \
+            "${{ needs.daemon.result }}" \
+            "${{ needs.node.result }}" \
+            "${{ needs.e2e.result }}" \
+            "${{ needs.lint.result }}"; do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              exit 1
+            fi
+          done

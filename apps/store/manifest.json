@@ -1,0 +1,1 @@
+{"id":"tech.solwear.store","name":"SolWear Store","version":"0.1.0","sdk":"0.1","type":"app","entry":"index.html","capabilities":["system","apps"],"author":"SolWear","description":"Lists installed apps and performs integrity-bound package installs."}

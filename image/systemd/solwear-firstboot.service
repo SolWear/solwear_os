@@ -1,0 +1,15 @@
+[Unit]
+Description=SolWear first-boot provisioning
+Wants=network-online.target
+After=network-online.target systemd-sysusers.service systemd-tmpfiles-setup.service
+Before=solweard.service solwear-ui.service
+ConditionPathExists=!/var/lib/solwear/.firstboot-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/solwear/solwear-firstboot.sh
+RemainAfterExit=yes
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

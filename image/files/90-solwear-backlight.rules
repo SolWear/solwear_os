@@ -1,0 +1,5 @@
+# Let the solwear user set panel brightness. The kernel exposes the control as
+# root-writable only, so the video group is given write access to it here.
+SUBSYSTEM=="backlight", ACTION=="add", \
+  RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", \
+  RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"

@@ -1,0 +1,11 @@
+{
+  "id": "__ID__",
+  "name": "__NAME__",
+  "version": "1.0.0",
+  "sdk": "0.1",
+  "type": "watchface",
+  "entry": "index.html",
+  "capabilities": ["system", "power"],
+  "author": "__AUTHOR__",
+  "description": "__DESCRIPTION__"
+}

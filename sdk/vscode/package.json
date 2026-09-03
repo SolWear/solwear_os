@@ -1,0 +1,97 @@
+{
+  "name": "solwear-vscode",
+  "displayName": "SolWear",
+  "description": "Build, run, package and diagnose SolWear applications from VS Code.",
+  "version": "0.1.0",
+  "publisher": "solwear",
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.96.0" },
+  "categories": ["Other"],
+  "keywords": ["solwear", "wearable", "solana"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "files": ["dist", "README.md", "package.json"],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "test": "npm run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.7.3"
+  },
+  "contributes": {
+    "commands": [
+      { "command": "solwear.new", "title": "SolWear: New App", "category": "SolWear" },
+      { "command": "solwear.build", "title": "SolWear: Build", "category": "SolWear", "icon": "$(tools)" },
+      { "command": "solwear.run", "title": "SolWear: Run in Emulator", "category": "SolWear", "icon": "$(play)" },
+      { "command": "solwear.package", "title": "SolWear: Package .swa", "category": "SolWear", "icon": "$(package)" },
+      { "command": "solwear.doctor", "title": "SolWear: Doctor", "category": "SolWear", "icon": "$(heart)" }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "solwear.new" },
+        { "command": "solwear.build" },
+        { "command": "solwear.run" },
+        { "command": "solwear.package" },
+        { "command": "solwear.doctor" }
+      ],
+      "editor/title/run": [
+        { "command": "solwear.run", "when": "resourceFilename == manifest.json", "group": "run" }
+      ]
+    },
+    "taskDefinitions": [
+      {
+        "type": "solwear",
+        "required": ["command"],
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": ["build", "run", "package", "doctor"],
+            "description": "SolWear CLI command to run."
+          },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Additional CLI arguments."
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "solwear",
+        "label": "SolWear build errors",
+        "owner": "solwear",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
+    ],
+    "configuration": {
+      "title": "SolWear",
+      "properties": {
+        "solwear.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Path to solwear or bin.js. Empty uses this monorepo's CLI, then PATH."
+        },
+        "solwear.defaultProfile": {
+          "type": "string",
+          "default": "pi-round-480",
+          "scope": "resource",
+          "description": "Device profile passed to SolWear: Run in Emulator."
+        }
+      }
+    }
+  }
+}

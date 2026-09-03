@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solwear.tech/schema/registry.schema.json",
+  "title": "SolWear application registry",
+  "description": "store/registry/index.json. See section 10 of the architecture specification.",
+  "type": "object",
+  "required": ["schemaVersion", "apps"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Registry format version. 1 today.",
+      "enum": [1]
+    },
+    "apps": {
+      "type": "array",
+      "description": "Published applications, grouped by id and ascending in version within each id.",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "version",
+        "type",
+        "url",
+        "sha256",
+        "publisher",
+        "publisherKey",
+        "description",
+        "sdk"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Reverse-DNS identifier, matching the package manifest exactly.",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version. Must be strictly greater than every version already published for this id.",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["app", "watchface"]
+        },
+        "url": {
+          "type": "string",
+          "description": "Stable HTTPS URL of the .swa package. Must stay byte-identical forever.",
+          "pattern": "^https://[^\\s]+\\.swa$",
+          "maxLength": 2048
+        },
+        "sha256": {
+          "type": "string",
+          "description": "SHA-256 of the file at url, 64 lowercase hexadecimal characters.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Publisher name. Must match the manifest's author field.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "publisherKey": {
+          "type": "string",
+          "description": "Canonical base64 encoding of the raw 32-byte Ed25519 public key in signature.json. Must not change between versions of the same id.",
+          "pattern": "^[A-Za-z0-9+/]{43}=$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sdk": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "enum": ["0.1"]
+        }
+      }
+    }
+  }
+}

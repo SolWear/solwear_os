@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {
+      "id": "tech.solwear.watchface",
+      "name": "Classic Watchface",
+      "version": "1.0.0",
+      "type": "watchface",
+      "url": "https://store.solwear.tech/pkg/tech.solwear.watchface-1.0.0.swa",
+      "sha256": "3f1c9a58b0d47e2a6c8f05b31d9ea74c2b6e08f4a1d3c75920e6b8143a7d0c52",
+      "publisher": "SolWear",
+      "publisherKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+      "description": "The default watchface: time, date and battery, adaptive to any screen.",
+      "sdk": "0.1"
+    },
+    {
+      "id": "tech.solwear.watchface",
+      "name": "Classic Watchface",
+      "version": "1.1.0",
+      "type": "watchface",
+      "url": "https://store.solwear.tech/pkg/tech.solwear.watchface-1.1.0.swa",
+      "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "publisher": "SolWear",
+      "publisherKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+      "description": "The default watchface: time, date and battery, adaptive to any screen.",
+      "sdk": "0.1"
+    },
+    {
+      "id": "tech.example.timer",
+      "name": "Interval Timer",
+      "version": "1.2.0",
+      "type": "app",
+      "url": "https://apps.example.com/tech.example.timer-1.2.0.swa",
+      "sha256": "9f2c1e0b7a5d4c3b2a190807f6e5d4c3b2a190807f6e5d4c3b2a190807f6e5d4",
+      "publisher": "Example Ltd",
+      "publisherKey": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+      "description": "Interval timer with haptic cues.",
+      "sdk": "0.1"
+    }
+  ]
+}

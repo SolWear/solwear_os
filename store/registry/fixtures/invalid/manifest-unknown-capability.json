@@ -1,0 +1,15 @@
+{
+  "id": "tech.example.timer",
+  "name": "Interval Timer",
+  "version": "1.2.0",
+  "sdk": "0.1",
+  "type": "app",
+  "entry": "index.html",
+  "icon": "assets/icon.png",
+  "capabilities": [
+    "system",
+    "filesystem"
+  ],
+  "author": "Example Ltd",
+  "description": "Interval timer with haptic cues."
+}

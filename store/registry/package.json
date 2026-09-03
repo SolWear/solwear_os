@@ -1,0 +1,13 @@
+{
+  "name": "@solwear/registry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The SolWear application registry, its JSON Schemas and its validator.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "validate": "node validate.mjs",
+    "verify:hosted": "node verify-packages.mjs",
+    "test": "node test.mjs"
+  }
+}

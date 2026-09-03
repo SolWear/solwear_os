@@ -1,0 +1,384 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build a release for, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  DAEMON_MANIFEST: os/solweard/Cargo.toml
+  TARGET: aarch64-unknown-linux-gnu
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Work out what we are releasing, once, so every other job agrees.
+  # ---------------------------------------------------------------------
+  meta:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: meta
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Releasing $tag (version $version)"
+
+  # ---------------------------------------------------------------------
+  # Nothing ships if the registry is invalid.
+  # ---------------------------------------------------------------------
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - run: node store/registry/validate.mjs
+      - run: node store/registry/test.mjs
+      - run: node store/registry/verify-packages.mjs
+      - run: node docs/build.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: docs/dist
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # The aarch64 daemon: the binary that actually runs on the watch.
+  # ---------------------------------------------------------------------
+  daemon:
+    name: Daemon (aarch64)
+    runs-on: ubuntu-latest
+    needs: [meta, verify]
+    outputs:
+      built: ${{ steps.probe.outputs.present }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Look for the daemon
+        id: probe
+        run: |
+          if [ -f "$DAEMON_MANIFEST" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Daemon not built::$DAEMON_MANIFEST does not exist; the release will not include solweard."
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.probe.outputs.present == 'true'
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.probe.outputs.present == 'true'
+        with:
+          workspaces: os/solweard
+          key: ${{ env.TARGET }}
+
+      - name: Install the aarch64 cross linker
+        if: steps.probe.outputs.present == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        if: steps.probe.outputs.present == 'true'
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --locked --manifest-path "$DAEMON_MANIFEST" --target "$TARGET"
+
+      - name: Stage the binary
+        if: steps.probe.outputs.present == 'true'
+        run: |
+          mkdir -p artifacts
+          src="os/solweard/target/$TARGET/release/solweard"
+          [ -f "$src" ] || src="target/$TARGET/release/solweard"
+          cp "$src" "artifacts/solweard-${{ needs.meta.outputs.version }}-$TARGET"
+          ( cd artifacts && sha256sum "solweard-${{ needs.meta.outputs.version }}-$TARGET" \
+            > "solweard-${{ needs.meta.outputs.version }}-$TARGET.sha256" )
+
+      - uses: actions/upload-artifact@v4
+        if: steps.probe.outputs.present == 'true'
+        with:
+          name: solweard-aarch64
+          path: artifacts/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # The .swa packages for the first-party apps.
+  # ---------------------------------------------------------------------
+  packages:
+    name: App packages (.swa)
+    runs-on: ubuntu-latest
+    needs: [meta, verify]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Find the Node components
+        id: probe
+        run: |
+          if [ -f package.json ]; then
+            printf '.\n' > components.txt
+          else
+            find os sdk emulator apps -maxdepth 2 -name package.json \
+              -not -path '*/node_modules/*' -printf '%h\n' 2>/dev/null | sort -u > components.txt || true
+          fi
+          if [ ! -s components.txt ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Packages not built::No Node component has a package.json; the release will not include .swa packages."
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+          if find . -name package-lock.json -not -path '*/node_modules/*' | grep -q .; then
+            echo "cache=npm" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v5
+        if: steps.probe.outputs.found == 'true'
+        with:
+          node-version: 20
+          cache: ${{ steps.probe.outputs.cache }}
+          cache-dependency-path: "**/package-lock.json"
+
+      - name: Install and build each component
+        if: steps.probe.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          while IFS= read -r dir; do
+            echo "::group::$dir"
+            pushd "$dir" > /dev/null
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            npm run build --if-present
+            popd > /dev/null
+            echo "::endgroup::"
+          done < components.txt
+
+      - name: Package every first-party app
+        if: steps.probe.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          shopt -s nullglob
+
+          # The CLI is the only thing that knows how to build a .swa.
+          cli=""
+          for candidate in sdk/cli/dist/bin.js node_modules/@solwear/cli/dist/bin.js; do
+            [ -f "$candidate" ] && cli="$candidate" && break
+          done
+          if [ -z "$cli" ]; then
+            echo "::warning title=No packages::The solwear CLI was not built, so no .swa packages were produced."
+            exit 0
+          fi
+
+          built=0
+          for app in apps/*/; do
+            [ -f "${app}manifest.json" ] || continue
+            echo "Packaging ${app}"
+            node store/registry/validate.mjs --manifest "${app}manifest.json"
+            ( cd "$app" && node "$GITHUB_WORKSPACE/$cli" package )
+            for swa in "$app"dist/*.swa; do
+              cp "$swa" artifacts/
+              built=$((built + 1))
+            done
+          done
+
+          if [ "$built" -eq 0 ]; then
+            echo "::warning title=No packages::No app produced a .swa; the release will not include packages."
+          else
+            ( cd artifacts && sha256sum ./*.swa > SHA256SUMS.swa.txt )
+            echo "Packaged $built app(s)."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: steps.probe.outputs.found == 'true'
+        with:
+          name: swa-packages
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------
+  # The Raspberry Pi image. This is the job most likely to be unbuildable
+  # on a hosted runner, so it is explicitly allowed to skip itself with a
+  # message that says exactly why rather than failing the release.
+  # ---------------------------------------------------------------------
+  image:
+    name: Raspberry Pi image
+    runs-on: ubuntu-latest
+    needs: [meta, daemon]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Decide whether the image can be built here
+        id: probe
+        run: |
+          reason=""
+          if [ ! -x image/build.sh ] && [ ! -f image/build.sh ]; then
+            reason="image/build.sh does not exist yet"
+          elif [ "${{ needs.daemon.outputs.built }}" != "true" ]; then
+            reason="the aarch64 daemon was not built, so there is nothing to install into the image"
+          elif ! command -v losetup >/dev/null 2>&1; then
+            reason="losetup is unavailable, so the image cannot be mounted"
+          fi
+
+          if [ -n "$reason" ]; then
+            echo "buildable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Pi image skipped::Skipping the Raspberry Pi image: $reason. The rest of the release is unaffected; build the image locally with ./image/build.sh."
+            echo "### Raspberry Pi image skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Reason: $reason." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Build it locally with `./image/build.sh --profile pi4 --out image/out/solwear.img`.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "buildable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.probe.outputs.buildable == 'true'
+        with:
+          name: solweard-aarch64
+          path: artifacts
+
+      - name: Install image build tooling
+        if: steps.probe.outputs.buildable == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            qemu-user-static binfmt-support parted kpartx dosfstools e2fsprogs xz-utils
+
+      - name: Build the image
+        if: steps.probe.outputs.buildable == 'true'
+        run: |
+          mkdir -p image/out
+          sudo ./image/build.sh \
+            --profile pi4 \
+            --daemon "artifacts/solweard-${{ needs.meta.outputs.version }}-$TARGET" \
+            --out "image/out/solwear-${{ needs.meta.outputs.version }}-pi4.img"
+
+      - name: Compress the image
+        if: steps.probe.outputs.buildable == 'true'
+        run: |
+          cd image/out
+          xz -T0 -9 "solwear-${{ needs.meta.outputs.version }}-pi4.img"
+          sha256sum ./*.img.xz > SHA256SUMS.image.txt
+
+      - uses: actions/upload-artifact@v4
+        if: steps.probe.outputs.buildable == 'true'
+        with:
+          name: pi-image
+          path: image/out/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # Collect whatever was produced and attach it to the GitHub release.
+  # ---------------------------------------------------------------------
+  release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: [meta, verify, daemon, packages, image]
+    if: always() && needs.verify.result == 'success'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+
+      - name: Collect release assets
+        id: collect
+        run: |
+          mkdir -p release
+          find downloaded -type f \
+            \( -name 'solweard-*' -o -name '*.swa' -o -name '*.img.xz' -o -name 'SHA256SUMS*' \) \
+            -exec cp {} release/ \;
+
+          # The documentation site travels as one archive rather than as
+          # several hundred loose files.
+          if [ -d downloaded/docs-site ]; then
+            tar -czf "release/solwear-docs-${{ needs.meta.outputs.version }}.tar.gz" \
+              -C downloaded/docs-site .
+          fi
+
+          ls -la release
+          if [ -z "$(ls -A release)" ]; then
+            echo "::error title=Nothing to release::No build job produced an artifact."
+            exit 1
+          fi
+          ( cd release && sha256sum ./* > SHA256SUMS.txt ) || true
+
+      - name: Write the release notes
+        run: |
+          {
+            echo "# SolWear OS ${{ needs.meta.outputs.tag }}"
+            echo
+            echo "## What is in this release"
+            echo
+            if [ "${{ needs.daemon.result }}" = "success" ] && [ "${{ needs.daemon.outputs.built }}" = "true" ]; then
+              echo "- \`solweard\` for \`aarch64-unknown-linux-gnu\`"
+            else
+              echo "- The aarch64 daemon was **not** built for this release."
+            fi
+            if [ "${{ needs.packages.result }}" = "success" ]; then
+              echo "- Signed-format \`.swa\` packages for the first-party apps"
+            else
+              echo "- App packages were **not** built for this release."
+            fi
+            if [ "${{ needs.image.result }}" = "success" ]; then
+              echo "- A Raspberry Pi 4 image, \`.img.xz\`"
+            else
+              echo "- The Raspberry Pi image was **skipped**. Build it locally with \`./image/build.sh --profile pi4\`; see the workflow summary for the reason."
+            fi
+            echo "- The documentation site as a tarball"
+            echo
+            echo "Verify any download against \`SHA256SUMS.txt\` before using it."
+            echo
+            echo "## Flashing"
+            echo
+            echo "See \`docs/pages/flashing-a-raspberry-pi.md\`."
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: SolWear OS ${{ needs.meta.outputs.tag }}
+          body_path: release-notes.md
+          prerelease: ${{ needs.meta.outputs.prerelease == 'true' }}
+          draft: false
+          fail_on_unmatched_files: true
+          files: release/*

@@ -1,0 +1,23 @@
+{
+  "id": "pi-round-240",
+  "label": "Round 240 (the smallest supported screen)",
+  "device": "solwear-round-240",
+  "screen": { "width": 240, "height": 240, "shape": "round" },
+  "bezel": {
+    "style": "round",
+    "body": "#15171c",
+    "rim": "#3a3f48",
+    "thickness": 16,
+    "strap": true
+  },
+  "window": { "width": 400, "height": 560 },
+  "buttons": [{ "id": "side", "label": "Crown", "edge": "right", "offset": 0.36, "length": 0.16 }],
+  "mock": {
+    "batteryPercent": 18,
+    "charging": false,
+    "batteryDrainPerHour": 8,
+    "brightness": 55,
+    "steps": 15230,
+    "seed": 1122334455
+  }
+}

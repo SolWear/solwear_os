@@ -1,0 +1,27 @@
+{
+  "id": "pi-square-320",
+  "label": "Square 320 (Pi Zero 2 W + 320x320 SPI)",
+  "device": "solwear-square-320",
+  "screen": { "width": 320, "height": 320, "shape": "square" },
+  "bezel": {
+    "style": "square",
+    "body": "#101216",
+    "rim": "#2b2f36",
+    "thickness": 18,
+    "radius": 0.16,
+    "strap": true
+  },
+  "window": { "width": 480, "height": 620 },
+  "buttons": [
+    { "id": "select", "label": "Select", "edge": "right", "offset": 0.3, "length": 0.16 },
+    { "id": "back", "label": "Back", "edge": "left", "offset": 0.3, "length": 0.16 }
+  ],
+  "mock": {
+    "batteryPercent": 42,
+    "charging": false,
+    "batteryDrainPerHour": 6,
+    "brightness": 65,
+    "steps": 8410,
+    "seed": 704318281
+  }
+}

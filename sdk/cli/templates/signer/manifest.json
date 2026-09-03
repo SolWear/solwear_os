@@ -1,0 +1,11 @@
+{
+  "id": "__ID__",
+  "name": "__NAME__",
+  "version": "1.0.0",
+  "sdk": "0.1",
+  "type": "app",
+  "entry": "index.html",
+  "capabilities": ["system", "wallet", "notifications"],
+  "author": "__AUTHOR__",
+  "description": "__DESCRIPTION__"
+}

@@ -1,0 +1,36 @@
+# SolWear OS — editor defaults.
+# https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+[*.rs]
+indent_size = 4
+max_line_length = 100
+
+[*.{md,markdown}]
+# Markdown uses trailing spaces for hard line breaks.
+trim_trailing_whitespace = false
+
+[*.{json,jsonc,json5}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{sh,bash}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.{png,jpg,jpeg,gif,ico,webp,woff,woff2,swa,img}]
+insert_final_newline = false
+trim_trailing_whitespace = false

@@ -1,0 +1,27 @@
+[Unit]
+Description=SolWear system daemon
+After=network.target solwear-firstboot.service systemd-tmpfiles-setup.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=solwear
+Group=solwear
+EnvironmentFile=-/etc/solwear/solweard.env
+ExecStart=/usr/bin/solweard
+Restart=on-failure
+RestartSec=2s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/solwear
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

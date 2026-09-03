@@ -1,0 +1,33 @@
+[Unit]
+Description=SolWear kiosk shell
+Requires=solweard.service
+After=solweard.service solwear-firstboot.service systemd-user-sessions.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=solwear
+Group=solwear
+PAMName=login
+Environment=HOME=/var/lib/solwear
+Environment=XDG_RUNTIME_DIR=/run/solwear-ui
+RuntimeDirectory=solwear-ui
+RuntimeDirectoryMode=0700
+ExecStart=/usr/lib/solwear/solwear-ui-launch.sh
+Restart=on-failure
+RestartSec=2s
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=full
+ReadWritePaths=/var/lib/solwear
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
