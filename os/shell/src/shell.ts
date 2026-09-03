@@ -403,7 +403,9 @@ export class Shell {
     const launchable = this.apps.filter((app) => app.type === "app");
     const grid = el("div", { class: "grid" });
 
-    for (const app of launchable) {
+    const glyphs = glyphsFor(launchable.map((app) => app.name));
+
+    launchable.forEach((app, index) => {
       grid.append(
         el(
           "button",
@@ -415,11 +417,11 @@ export class Shell {
           },
           app.icon
             ? el("img", { class: "tile-icon", src: `/apps/${app.id}/${app.icon}`, alt: "" })
-            : el("span", { class: "tile-glyph", text: initials(app.name) }),
-          el("span", { class: "tile-name", text: app.name }),
+            : el("span", { class: "tile-glyph", text: glyphs[index] ?? "?" }),
+          el("span", { class: "tile-name", text: app.name, title: app.name }),
         ),
       );
-    }
+    });
 
     grid.append(
       el(
@@ -632,17 +634,55 @@ export class Shell {
 }
 
 /**
- * A two-letter glyph for an app with no icon.
+ * Two-letter glyphs for apps with no icon, guaranteed distinct from each other.
  *
- * Word initials are the obvious choice and the wrong one here: apps from the
- * same publisher share a prefix, so "SolWear Signer" and "SolWear Store" both
- * collapse to "SS". The distinguishing word is the last one, so that is what
- * the glyph is taken from.
+ * A glyph is only useful if it tells one tile from another, and a rule applied
+ * to each name in isolation cannot promise that: word initials collapse apps
+ * from one publisher ("SolWear Signer" and "SolWear Store" both give "SS"),
+ * while the distinguishing last word collides just as easily ("Stats" and
+ * "SolWear Store" both give "St"). So the glyphs are chosen for the launcher as
+ * a set: each name proposes candidates in descending order of how well it reads,
+ * and the first candidate nobody has taken yet wins.
  */
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const distinctive = words[words.length - 1] ?? "";
-  const letters = distinctive.replace(/[^\p{L}\p{N}]/gu, "");
-  if (letters.length === 0) return "?";
-  return (letters[0]?.toUpperCase() ?? "") + (letters[1]?.toLowerCase() ?? "");
+function glyphsFor(names: string[]): string[] {
+  const taken = new Set<string>();
+  return names.map((name) => {
+    for (const candidate of glyphCandidates(name)) {
+      if (!taken.has(candidate)) {
+        taken.add(candidate);
+        return candidate;
+      }
+    }
+    // Every candidate was taken; fall back to something unique by construction.
+    let index = 2;
+    while (taken.has(String(index))) index += 1;
+    taken.add(String(index));
+    return String(index);
+  });
+}
+
+function glyphCandidates(name: string): string[] {
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter(Boolean);
+  if (words.length === 0) return ["?"];
+
+  const last = words[words.length - 1]!;
+  const first = words[0]!;
+  const pair = (a?: string, b?: string) =>
+    a ? a.toUpperCase() + (b ?? "").toLowerCase() : "";
+
+  const candidates = [
+    // The distinguishing word, which is the last one for "SolWear Signer".
+    pair(last[0], last[1]),
+    // Publisher plus product, which separates "Stats" from "SolWear Store".
+    words.length > 1 ? pair(first[0], last[0]) : "",
+    // Further into the distinguishing word, for "Store" against "Stats".
+    pair(last[0], last[2]),
+    pair(last[0], last[3]),
+    pair(last[1], last[2]),
+  ];
+  return candidates.filter((candidate) => candidate.length > 0);
 }

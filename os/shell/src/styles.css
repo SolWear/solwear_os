@@ -332,9 +332,14 @@ body {
   color: var(--ink-dim);
   text-align: center;
   max-width: 100%;
+  /* A tile is narrow, and "SolWear Signer" truncated to "SolWear ..." names
+     nothing. Two lines cost less than losing the distinguishing word. */
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 /* --- lists, cards, settings --------------------------------------------- */
