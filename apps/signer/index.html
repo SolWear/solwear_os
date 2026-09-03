@@ -1,1 +1,28 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="styles.css"><title>Signer</title></head><body><main><p class="eyebrow">SOLANA WALLET</p><h1>Confirm a signature</h1><p>Public key</p><code id="key">connecting…</code><label>Message<textarea id="message">Hello from SolWear</textarea></label><button id="sign" disabled>Review & sign</button><p id="status"></p><code id="signature"></code></main><script type="module" src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>Signer</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Solana wallet</p>
+        <h1 id="key" class="key">connecting…</h1>
+      </header>
+
+      <section class="message">
+        <p class="label">Message</p>
+        <textarea id="message" rows="2" aria-label="Message to sign">Hello from SolWear</textarea>
+      </section>
+
+      <button id="sign" class="sign" disabled>Sign</button>
+
+      <p id="status" class="status" role="status"></p>
+      <p id="signature" class="signature"></p>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

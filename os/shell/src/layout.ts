@@ -8,8 +8,16 @@
 
 import type { Screen } from "./types.js";
 
-/** Fraction of the smaller dimension kept clear on each edge. */
-const INSET_ROUND = 0.085;
+/**
+ * Fraction of the smaller dimension kept clear on each edge.
+ *
+ * On a round panel the usable area is the square inscribed in the circle, so
+ * the inset is exactly half of what the circle takes off the width:
+ * (1 - 1/sqrt(2)) / 2. Anything smaller pushes the top row, where the status
+ * bar lives, outside the glass: at the very top of a circle the chord is
+ * narrow, and a uniform rectangular inset does not account for that.
+ */
+const INSET_ROUND = 0.5 * (1 - Math.SQRT1_2);
 const INSET_FLAT = 0.035;
 
 export function applyScreen(screen: Screen): void {

@@ -245,12 +245,14 @@ fn serve_app_asset(state: &AppState, segments: &[&str]) -> Response {
         return (StatusCode::NOT_FOUND, "asset not found").into_response();
     }
     serve_file(&dir, &relative)
-        .map(|response| secure_asset(response, AppCsp))
+        .map(|response| secure_asset(response, AppCsp(state.http_addr())))
+        .map(allow_opaque_origin)
         .unwrap_or_else(|| (StatusCode::NOT_FOUND, "asset not found").into_response())
 }
 
-/// The Content-Security-Policy for a sandboxed app document.
-pub struct AppCsp;
+/// The Content-Security-Policy for a sandboxed app document, which is served
+/// from the given HTTP address.
+pub struct AppCsp(pub std::net::SocketAddr);
 
 /// The Content-Security-Policy for the shell, which may open the JSON-RPC
 /// socket at the address the daemon actually bound.
@@ -262,7 +264,19 @@ trait AssetPolicy {
 
 impl AssetPolicy for AppCsp {
     fn policy(&self) -> String {
-        "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'".to_string()
+        // An app runs in a sandbox without `allow-same-origin`, so its document
+        // has an opaque origin and `'self'` matches nothing at all: under a
+        // `'self'` policy the app cannot even load its own bundle. The origin it
+        // is actually served from has to be named explicitly instead.
+        //
+        // This does let one app request another's static files, which are not
+        // secrets. The boundary that matters is `connect-src 'none'`: an app
+        // still cannot reach the JSON-RPC socket, so every privileged call goes
+        // through the shell's broker, which stamps the calling app id.
+        let origin = format!("http://{}", self.0);
+        format!(
+            "default-src {origin} data: blob:; script-src {origin} 'unsafe-inline' blob:; style-src {origin} 'unsafe-inline'; img-src {origin} data: blob:; font-src {origin} data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
+        )
     }
 }
 
@@ -286,6 +300,21 @@ fn secure_asset(mut response: Response, policy: impl AssetPolicy) -> Response {
         response
             .headers_mut()
             .insert("Content-Security-Policy", value);
+    }
+    response
+}
+
+/// Let an opaque-origin app document fetch its own subresources.
+///
+/// A module script is always fetched with CORS, and the sandboxed frame sends
+/// `Origin: null`, so without this header the browser blocks the app's own
+/// bundle. The assets are static files the browser could already request
+/// directly, so allowing any origin to read them gives nothing away.
+fn allow_opaque_origin(mut response: Response) -> Response {
+    if let Ok(value) = "*".parse() {
+        response
+            .headers_mut()
+            .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, value);
     }
     response
 }

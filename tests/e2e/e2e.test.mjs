@@ -200,6 +200,27 @@ describe("installing a signed package with integrity pins", () => {
     const meta = await fetch(`${world.daemon.httpUrl}/apps/${APP_ID}/install.json`);
     assert.equal(meta.status, 404);
   });
+
+  it("lets an opaque-origin app document load its own bundle", async () => {
+    // Apps run in a sandbox without `allow-same-origin`, so the document has an
+    // opaque origin: its module bundle is fetched cross-origin with
+    // `Origin: null`, and a CSP of `'self'` matches nothing. Without both of
+    // these the browser blocks every app's own script and no app can start,
+    // which no daemon-level RPC test would ever notice.
+    const bundle = await fetch(`${world.daemon.httpUrl}/apps/${APP_ID}/app.js`, {
+      headers: { origin: "null" },
+    });
+    assert.equal(bundle.status, 200);
+    assert.equal(bundle.headers.get("access-control-allow-origin"), "*");
+
+    const policy = bundle.headers.get("content-security-policy") ?? "";
+    const origin = new URL(world.daemon.httpUrl).origin;
+    assert.ok(
+      policy.includes(`script-src ${origin}`),
+      `the app policy must name the serving origin, not 'self': ${policy}`,
+    );
+    assert.match(policy, /connect-src 'none'/);
+  });
 });
 
 describe("wallet signing", () => {
@@ -384,7 +405,12 @@ describe("the registry the store app reads", () => {
       join(repoRoot, "store", "registry", "verify-packages.mjs"),
       "--offline",
     ]);
-    assert.match(stdout, /Verified 3 packages/);
+    // The count comes from the registry itself: publishing a new version must
+    // not turn this into a failing test.
+    const registry = JSON.parse(
+      readFileSync(join(repoRoot, "store", "registry", "index.json"), "utf8"),
+    );
+    assert.match(stdout, new RegExp(`Verified ${registry.apps.length} packages`));
   });
 
   it("installs a first-party package straight from the registry entry", async () => {

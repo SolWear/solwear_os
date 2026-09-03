@@ -15,6 +15,16 @@ import { MockDaemon } from "./daemon.mjs";
 import { MockHal } from "./mock-hal.mjs";
 import { attachWebSocket } from "./ws.mjs";
 
+/**
+ * Headers for anything an app document loads.
+ *
+ * Apps run in a sandbox without `allow-same-origin`, so the document has an
+ * opaque origin and fetches its own module bundle as a cross-origin request.
+ * Without this header the browser blocks the app's own script, exactly as the
+ * daemon has to allow it on the device.
+ */
+const APP_ASSET_HEADERS = { "access-control-allow-origin": "*" };
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -201,16 +211,20 @@ export class EmulatorServer {
       return this.sendFromDirectory(response, this.options.shellDir, path.slice("/shell/".length));
     }
     if (path === "/app" || path === "/app/") {
-      return this.sendFile(response, join(this.options.appDir, this.options.appManifest.entry ?? "index.html"));
+      return this.sendFile(
+        response,
+        join(this.options.appDir, this.options.appManifest.entry ?? "index.html"),
+        APP_ASSET_HEADERS,
+      );
     }
     if (path.startsWith("/app/")) {
-      return this.sendFromDirectory(response, this.options.appDir, path.slice("/app/".length));
+      return this.sendFromDirectory(response, this.options.appDir, path.slice("/app/".length), APP_ASSET_HEADERS);
     }
     if (path.startsWith("/apps/")) {
       const [, , appId, ...rest] = path.split("/");
       const root = this.options.appRoots?.[appId];
       if (!root) return this.sendText(response, 404, `No assets for app ${appId}.`);
-      return this.sendFromDirectory(response, root, rest.join("/") || "index.html");
+      return this.sendFromDirectory(response, root, rest.join("/") || "index.html", APP_ASSET_HEADERS);
     }
 
     this.sendText(response, 404, `Nothing is served at ${path}.`);
@@ -283,28 +297,29 @@ export class EmulatorServer {
 
   // ---- static file helpers ----------------------------------------------
 
-  sendFromDirectory(response, root, relativePath) {
+  sendFromDirectory(response, root, relativePath, extraHeaders) {
     // Resolve and then check containment, so ".." cannot escape the directory.
     const target = resolve(root, normalize(relativePath));
     if (target !== resolve(root) && !target.startsWith(resolve(root) + sep)) {
       return this.sendText(response, 403, "Refusing to serve a path outside the served directory.");
     }
-    this.sendFile(response, target);
+    this.sendFile(response, target, extraHeaders);
   }
 
-  sendFile(response, path) {
+  sendFile(response, path, extraHeaders) {
     let stats;
     try {
       stats = statSync(path);
     } catch {
       return this.sendText(response, 404, `Not found: ${path}`);
     }
-    if (stats.isDirectory()) return this.sendFile(response, join(path, "index.html"));
+    if (stats.isDirectory()) return this.sendFile(response, join(path, "index.html"), extraHeaders);
 
     response.writeHead(200, {
       "content-type": MIME[extname(path).toLowerCase()] ?? "application/octet-stream",
       "content-length": stats.size,
       "cache-control": "no-store",
+      ...extraHeaders,
     });
     createReadStream(path).pipe(response);
   }

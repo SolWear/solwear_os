@@ -34,9 +34,10 @@ export function layout(screen: ScreenInfo, root?: HTMLElement): LayoutMetrics {
   const height = Math.max(1, Math.round(screen.height));
   const base = Math.min(width, height);
 
-  // A circle inscribed in the square loses (1 - 1/sqrt(2))/2 of the width at
-  // each corner. Half of that is a comfortable, still-generous inset.
-  const roundInset = Math.round(base * 0.5 * (1 - Math.SQRT1_2) * 0.85);
+  // The usable area of a round panel is the square inscribed in the circle,
+  // which loses (1 - 1/sqrt(2))/2 of the width at each edge. Insetting by less
+  // than that puts the corners of the content behind the bezel.
+  const roundInset = Math.round(base * 0.5 * (1 - Math.SQRT1_2));
   const safeInset = screen.shape === "round" ? roundInset : Math.round(base * 0.04);
 
   // 16px at a 400px base, floored so tiny screens stay legible.

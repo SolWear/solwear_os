@@ -276,20 +276,28 @@ body {
 
 /* --- launcher ----------------------------------------------------------- */
 
+/*
+ * A watch panel is too small for a tile grid: two columns of square tiles put
+ * the third app below the fold, where the round mask cuts it in half. Compact
+ * screens therefore get a vertical list, which is also what a thumb on a
+ * 40 mm panel can actually hit. Wide panels keep the grid.
+ */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 24), 1fr));
+  grid-template-columns: 1fr;
   gap: calc(var(--u) * 2.4);
-  padding-bottom: calc(var(--u) * 2);
+  /* Clear the back button so the last row is never hidden behind it. */
+  padding-bottom: calc(var(--u) * 10);
 }
 
 .tile {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: calc(var(--u) * 1.2);
-  aspect-ratio: 1;
+  justify-content: flex-start;
+  gap: calc(var(--u) * 3);
+  padding: calc(var(--u) * 2.4) calc(var(--u) * 3);
+  text-align: left;
   border: 1px solid var(--line);
   border-radius: calc(var(--u) * 4);
   background: var(--panel);
@@ -534,14 +542,10 @@ body {
 
 /* --- shape and orientation adaptations ---------------------------------- */
 
-/* On a round panel the corners are clipped, so the status bar and the back
-   button move inward and the launcher drops to two columns. */
+/* On a round panel the status bar and the back button move inward, since the
+   chord at the very top and bottom of the circle is narrower than the middle. */
 :root[data-shape="round"] .status-bar {
   padding: 0 calc(var(--u) * 3);
-}
-
-:root[data-shape="round"] .grid {
-  grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 28), 1fr));
 }
 
 :root[data-shape="round"] .page-title {
@@ -551,8 +555,20 @@ body {
 /* A wide panel has room to put the clock beside its readouts. */
 :root[data-orientation="wide"] .watchface {
   flex-direction: row;
+  flex-wrap: wrap;
   justify-content: space-evenly;
   gap: calc(var(--u) * 6);
+}
+
+/*
+ * The clock, the date and the readouts sit in one row on a wide panel. The
+ * hint below them is a caption for the whole row, not a fourth column, so it
+ * takes a line of its own instead of being squeezed off the right edge.
+ */
+:root[data-orientation="wide"] .hint,
+:root[data-orientation="wide"] .pill {
+  flex: 0 0 100%;
+  text-align: center;
 }
 
 :root[data-orientation="wide"] .watchface-meta {
@@ -565,8 +581,26 @@ body {
   font-size: calc(var(--u) * 26);
 }
 
+/*
+ * A wide panel lays the watchface out in a row, which makes each column narrow
+ * enough that short labels wrap one word per line. They are single readouts,
+ * so they stay on one line and the row absorbs the width instead.
+ */
+:root[data-orientation="wide"] .clock-date {
+  white-space: nowrap;
+}
+
 :root[data-orientation="wide"] .grid {
   grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 20), 1fr));
+  padding-bottom: calc(var(--u) * 2);
+}
+
+:root[data-orientation="wide"] .tile {
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--u) * 1.2);
+  aspect-ratio: 1;
+  text-align: center;
 }
 
 /* Below roughly 300 px the panel cannot carry secondary readouts. */

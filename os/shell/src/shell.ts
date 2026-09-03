@@ -298,8 +298,15 @@ export class Shell {
   private renderStatusBar(): void {
     clear(this.statusBar);
     const { time } = formatClock(new Date());
+    // The watchface already carries the time and the date, so the status bar
+    // leaves its label empty there rather than printing either of them twice.
+    // Every other view gets the clock, because nothing else on screen has it.
     const label =
-      this.view === "app" && this.host.current ? this.host.current.name : time;
+      this.view === "app" && this.host.current
+        ? this.host.current.name
+        : this.view === "watch"
+          ? ""
+          : time;
 
     this.statusBar.append(
       el("span", { class: "status-label", text: label }),
@@ -352,9 +359,11 @@ export class Shell {
           { class: "watchface-meta" },
           this.meter("Battery", `${Math.round(this.power.percent)}%`, this.power.percent),
           this.meter(
-            "Signal",
+            "Network",
             this.network.connected ? (this.network.ssid ?? "online") : "offline",
-            this.network.signal ?? (this.network.connected ? 100 : 0),
+            // Only draw a bar when the HAL actually reports a strength.
+            // Painting a full bar for "connected" would be an invented reading.
+            this.network.signal ?? undefined,
           ),
         ),
         unread > 0
@@ -368,19 +377,24 @@ export class Shell {
     );
   }
 
-  private meter(label: string, value: string, percent: number): HTMLElement {
-    const clamped = Math.max(0, Math.min(100, percent));
-    return el(
+  private meter(label: string, value: string, percent?: number): HTMLElement {
+    const meter = el(
       "div",
       { class: "meter" },
       el("div", { class: "meter-label", text: label }),
       el("div", { class: "meter-value", text: value }),
-      el(
-        "div",
-        { class: "meter-track" },
-        el("div", { class: "meter-fill", style: `width:${clamped}%` }),
-      ),
     );
+    if (percent !== undefined) {
+      const clamped = Math.max(0, Math.min(100, percent));
+      meter.append(
+        el(
+          "div",
+          { class: "meter-track" },
+          el("div", { class: "meter-fill", style: `width:${clamped}%` }),
+        ),
+      );
+    }
+    return meter;
   }
 
   private launcherView(): HTMLElement {
@@ -595,7 +609,18 @@ export class Shell {
   }
 }
 
+/**
+ * A two-letter glyph for an app with no icon.
+ *
+ * Word initials are the obvious choice and the wrong one here: apps from the
+ * same publisher share a prefix, so "SolWear Signer" and "SolWear Store" both
+ * collapse to "SS". The distinguishing word is the last one, so that is what
+ * the glyph is taken from.
+ */
 function initials(name: string): string {
-  const words = name.trim().split(/\s+/).slice(0, 2);
-  return words.map((word) => word[0]?.toUpperCase() ?? "").join("") || "?";
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const distinctive = words[words.length - 1] ?? "";
+  const letters = distinctive.replace(/[^\p{L}\p{N}]/gu, "");
+  if (letters.length === 0) return "?";
+  return (letters[0]?.toUpperCase() ?? "") + (letters[1]?.toLowerCase() ?? "");
 }

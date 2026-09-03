@@ -14,6 +14,18 @@
       "description": "Demonstrates wearer-confirmed Solana message signing."
     },
     {
+      "id": "tech.solwear.signer",
+      "name": "SolWear Signer",
+      "version": "0.2.0",
+      "sdk": "0.1",
+      "type": "app",
+      "url": "https://packages.solwear.tech/tech.solwear.signer/tech.solwear.signer-0.2.0.swa",
+      "sha256": "ce335fc566a246e5ce68084a8f5227ae56120643a692d14321a4b67a6a4ba91b",
+      "publisher": "SolWear",
+      "publisherKey": "rCN3sJOFaf/WSBhvcxitAXv72wsbI7HR24xBkJJdUd0=",
+      "description": "Demonstrates wearer-confirmed Solana message signing."
+    },
+    {
       "id": "tech.solwear.store",
       "name": "SolWear Store",
       "version": "0.1.0",
