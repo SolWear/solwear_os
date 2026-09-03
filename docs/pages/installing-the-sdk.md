@@ -12,7 +12,7 @@ There is also an optional VS Code extension that wraps the same commands.
 
 ## Requirements
 
-Node 20 LTS or newer. That is the only hard requirement for app development.
+Node 22 LTS or newer. That is the only hard requirement for app development.
 Rust is needed only if you are building the system daemon itself, and
 `qemu-system-aarch64` only if you want to boot the full image rather than the
 fast host emulator.

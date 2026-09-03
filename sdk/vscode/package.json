@@ -5,12 +5,27 @@
   "version": "0.1.0",
   "publisher": "solwear",
   "license": "Apache-2.0",
-  "engines": { "vscode": "^1.96.0" },
-  "categories": ["Other"],
-  "keywords": ["solwear", "wearable", "solana"],
+  "engines": {
+    "vscode": "^1.96.0",
+    "node": ">=22"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "solwear",
+    "wearable",
+    "solana"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
-  "files": ["dist", "README.md", "package.json"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
   "scripts": {
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -24,37 +39,84 @@
   },
   "contributes": {
     "commands": [
-      { "command": "solwear.new", "title": "SolWear: New App", "category": "SolWear" },
-      { "command": "solwear.build", "title": "SolWear: Build", "category": "SolWear", "icon": "$(tools)" },
-      { "command": "solwear.run", "title": "SolWear: Run in Emulator", "category": "SolWear", "icon": "$(play)" },
-      { "command": "solwear.package", "title": "SolWear: Package .swa", "category": "SolWear", "icon": "$(package)" },
-      { "command": "solwear.doctor", "title": "SolWear: Doctor", "category": "SolWear", "icon": "$(heart)" }
+      {
+        "command": "solwear.new",
+        "title": "SolWear: New App",
+        "category": "SolWear"
+      },
+      {
+        "command": "solwear.build",
+        "title": "SolWear: Build",
+        "category": "SolWear",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "solwear.run",
+        "title": "SolWear: Run in Emulator",
+        "category": "SolWear",
+        "icon": "$(play)"
+      },
+      {
+        "command": "solwear.package",
+        "title": "SolWear: Package .swa",
+        "category": "SolWear",
+        "icon": "$(package)"
+      },
+      {
+        "command": "solwear.doctor",
+        "title": "SolWear: Doctor",
+        "category": "SolWear",
+        "icon": "$(heart)"
+      }
     ],
     "menus": {
       "commandPalette": [
-        { "command": "solwear.new" },
-        { "command": "solwear.build" },
-        { "command": "solwear.run" },
-        { "command": "solwear.package" },
-        { "command": "solwear.doctor" }
+        {
+          "command": "solwear.new"
+        },
+        {
+          "command": "solwear.build"
+        },
+        {
+          "command": "solwear.run"
+        },
+        {
+          "command": "solwear.package"
+        },
+        {
+          "command": "solwear.doctor"
+        }
       ],
       "editor/title/run": [
-        { "command": "solwear.run", "when": "resourceFilename == manifest.json", "group": "run" }
+        {
+          "command": "solwear.run",
+          "when": "resourceFilename == manifest.json",
+          "group": "run"
+        }
       ]
     },
     "taskDefinitions": [
       {
         "type": "solwear",
-        "required": ["command"],
+        "required": [
+          "command"
+        ],
         "properties": {
           "command": {
             "type": "string",
-            "enum": ["build", "run", "package", "doctor"],
+            "enum": [
+              "build",
+              "run",
+              "package",
+              "doctor"
+            ],
             "description": "SolWear CLI command to run."
           },
           "args": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Additional CLI arguments."
           }
         }
@@ -65,7 +127,10 @@
         "name": "solwear",
         "label": "SolWear build errors",
         "owner": "solwear",
-        "fileLocation": ["relative", "${workspaceFolder}"],
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
         "pattern": {
           "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
           "file": 1,

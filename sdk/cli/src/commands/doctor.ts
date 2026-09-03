@@ -58,11 +58,11 @@ function installCommand(brew: string, apt: string): string {
 function checkNode(): Check {
   const version = process.versions.node;
   const major = Number(version.split(".")[0]);
-  if (major >= 20) return { name: "node", status: "ok", detail: `v${version}` };
+  if (major >= 22) return { name: "node", status: "ok", detail: `v${version}` };
   return {
     name: "node",
     status: "fail",
-    detail: `v${version} is too old; the CLI and the emulator need Node 20 or newer`,
+    detail: `v${version} is too old; the CLI and the emulator need Node 22 or newer`,
     fix: isMac ? "brew install node" : "sudo apt install nodejs",
   };
 }

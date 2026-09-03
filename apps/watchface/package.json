@@ -1,1 +1,21 @@
-{"name":"@solwear/app-watchface","version":"0.1.0","private":true,"type":"module","scripts":{"build":"node ../../sdk/cli/dist/bin.js build","typecheck":"tsc --noEmit","run":"node ../../sdk/cli/dist/bin.js run","package":"node ../../sdk/cli/dist/bin.js package"},"dependencies":{"@solwear/sdk":"file:../../sdk/runtime"},"devDependencies":{"typescript":"^5.7.3"}}
+{
+  "name": "@solwear/app-watchface",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../sdk/cli/dist/bin.js build",
+    "typecheck": "tsc --noEmit",
+    "run": "node ../../sdk/cli/dist/bin.js run",
+    "package": "node ../../sdk/cli/dist/bin.js package"
+  },
+  "dependencies": {
+    "@solwear/sdk": "file:../../sdk/runtime"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

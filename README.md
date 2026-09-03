@@ -87,7 +87,7 @@ hardware abstraction layer is swapped underneath it.
 
 ## Quick start
 
-You need Node 20 or newer and a stable Rust toolchain. Nothing else, and no
+You need Node 22 or newer and a stable Rust toolchain. Nothing else, and no
 hardware.
 
 Each component is an independent npm package, so build the three you need and

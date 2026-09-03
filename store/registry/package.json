@@ -9,5 +9,8 @@
     "validate": "node validate.mjs",
     "verify:hosted": "node verify-packages.mjs",
     "test": "node test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

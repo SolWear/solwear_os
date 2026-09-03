@@ -60,12 +60,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - run: node store/registry/validate.mjs
       - run: node store/registry/test.mjs
       - run: node store/registry/verify-packages.mjs
       - run: node docs/build.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: docs-site
           path: docs/dist
@@ -126,7 +126,7 @@ jobs:
           ( cd artifacts && sha256sum "solweard-${{ needs.meta.outputs.version }}-$TARGET" \
             > "solweard-${{ needs.meta.outputs.version }}-$TARGET.sha256" )
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: steps.probe.outputs.present == 'true'
         with:
           name: solweard-aarch64
@@ -167,7 +167,7 @@ jobs:
       - uses: actions/setup-node@v5
         if: steps.probe.outputs.found == 'true'
         with:
-          node-version: 20
+          node-version: 22
           cache: ${{ steps.probe.outputs.cache }}
           cache-dependency-path: "**/package-lock.json"
 
@@ -220,7 +220,7 @@ jobs:
             echo "Packaged $built app(s)."
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: steps.probe.outputs.found == 'true'
         with:
           name: swa-packages
@@ -265,7 +265,7 @@ jobs:
             echo "buildable=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         if: steps.probe.outputs.buildable == 'true'
         with:
           name: solweard-aarch64
@@ -294,7 +294,7 @@ jobs:
           xz -T0 -9 "solwear-${{ needs.meta.outputs.version }}-pi4.img"
           sha256sum ./*.img.xz > SHA256SUMS.image.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: steps.probe.outputs.buildable == 'true'
         with:
           name: pi-image
@@ -314,7 +314,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: downloaded
 

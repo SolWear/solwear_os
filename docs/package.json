@@ -8,5 +8,8 @@
   "scripts": {
     "build": "node build.mjs",
     "serve": "node build.mjs && node serve.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

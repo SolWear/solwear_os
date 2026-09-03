@@ -16,7 +16,10 @@
     "./browser": "./dist/solwear-sdk.js",
     "./global": "./dist/solwear-sdk.global.js"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json && node scripts/bundle.mjs",
@@ -26,5 +29,8 @@
   "devDependencies": {
     "esbuild": "^0.25.0",
     "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

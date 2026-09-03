@@ -4,9 +4,14 @@
   "private": true,
   "description": "The fast PC simulator: the real shell and app bundle against a mock HAL, in a desktop window.",
   "type": "module",
-  "bin": { "solwear-emulator": "bin/solwear-emulator.mjs" },
+  "bin": {
+    "solwear-emulator": "bin/solwear-emulator.mjs"
+  },
   "scripts": {
     "start": "node bin/solwear-emulator.mjs",
     "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

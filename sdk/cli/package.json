@@ -4,9 +4,18 @@
   "description": "The solwear command line tool: create, build, run, package, sign and publish SolWear apps.",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": { "solwear": "dist/bin.js" },
-  "files": ["dist", "templates", "README.md", "SIGNING.md"],
-  "engines": { "node": ">=20.0.0" },
+  "bin": {
+    "solwear": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md",
+    "SIGNING.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json && chmod +x dist/bin.js",
