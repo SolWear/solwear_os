@@ -104,7 +104,8 @@ export type Capability =
   | "sensors"
   | "notifications"
   | "apps"
-  | "wallet";
+  | "wallet"
+  | "nfc";
 
 export const CAPABILITIES: readonly Capability[] = [
   "system",
@@ -114,6 +115,7 @@ export const CAPABILITIES: readonly Capability[] = [
   "notifications",
   "apps",
   "wallet",
+  "nfc",
 ];
 
 /** JSON-RPC error code used when a call falls outside the app's capabilities. */

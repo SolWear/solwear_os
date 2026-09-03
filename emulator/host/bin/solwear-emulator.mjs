@@ -195,7 +195,7 @@ process.stdout.write(
 if (flags["no-window"]) {
   process.stdout.write(`  Open ${server.url} in a browser. Press Ctrl+C to stop.\n\n`);
 } else {
-  const { mode } = openWindow(server.url, { width: bezel.width, height: bezel.height });
+  const { mode } = openWindow(server.url, { width: bezel.width + 400, height: Math.max(bezel.height, 760) });
   if (mode === "fallback") {
     process.stdout.write(
       "  ! No Chromium-based browser found, so the emulator opened your default browser instead.\n" +

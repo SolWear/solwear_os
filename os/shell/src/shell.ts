@@ -36,6 +36,7 @@ export class Shell {
   private network: NetworkStatus = { connected: false, ssid: null, signal: null };
   private brightness = 70;
   private publicKey = "";
+  private walletStatus = { onboarded: true, locked: false, protected: false, name: "SolWear" };
   private online = false;
   private confirming: ConfirmRequest | null = null;
   private pointerStart: { x: number; y: number; t: number } | null = null;
@@ -99,8 +100,9 @@ export class Shell {
   }
 
   private async refreshWallet(): Promise<void> {
-    const result = await this.rpc.call<{ publicKey: string }>("wallet.publicKey");
+    const result = await this.rpc.call<{ publicKey: string; onboarded: boolean; locked: boolean; protected: boolean; name: string }>("wallet.status");
     this.publicKey = result.publicKey;
+    this.walletStatus = result;
   }
 
   private async refreshVolatile(): Promise<void> {
@@ -496,6 +498,25 @@ export class Shell {
       );
     }
 
+    const passphrase = el("input", { class: "select mono", type: "password", placeholder: "8+ character passphrase" });
+    const walletAction = el("button", {
+      class: "mini-button",
+      text: this.walletStatus.locked ? "Unlock" : this.walletStatus.protected ? "Lock" : "Protect",
+      onclick: async () => {
+        try {
+          if (this.walletStatus.locked) await this.rpc.call("wallet.unlock", { passphrase: passphrase.value });
+          else if (this.walletStatus.protected) await this.rpc.call("wallet.lock");
+          else await this.rpc.call("wallet.setPassphrase", { passphrase: passphrase.value, name: "SolWear" });
+          await this.refreshWallet();
+          this.render();
+        } catch (error) {
+          passphrase.value = "";
+          passphrase.placeholder = error instanceof Error ? error.message : "Wallet action failed";
+        }
+      },
+    });
+    const walletControls = el("span", { class: "wallet-controls" }, passphrase, walletAction);
+
     return this.page(
       "Settings",
       el(
@@ -521,8 +542,9 @@ export class Shell {
         ),
         this.settingRow(
           "Wallet",
-          el("span", { class: "value mono", text: this.publicKey ? elide(this.publicKey, 6, 6) : "—" }),
+          el("span", { class: "value mono", text: `${this.walletStatus.locked ? "locked · " : ""}${this.publicKey ? elide(this.publicKey, 6, 6) : "—"}` }),
         ),
+        this.settingRow("Security", walletControls),
         this.settingRow(
           "Device",
           el("span", {

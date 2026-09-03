@@ -12,6 +12,7 @@ pub const CAPABILITIES: &[&str] = &[
     "notifications",
     "apps",
     "wallet",
+    "nfc",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

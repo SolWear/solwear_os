@@ -50,6 +50,7 @@ test("every capability in the spec is exported", () => {
   assert.deepEqual([...CAPABILITIES].sort(), [
     "apps",
     "display",
+    "nfc",
     "notifications",
     "power",
     "sensors",

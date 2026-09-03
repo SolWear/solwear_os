@@ -76,16 +76,27 @@ fn mock_hal_answers_every_known_sensor() {
     );
 }
 
+#[test]
+fn mock_hal_exposes_a_controllable_nfc_transport() {
+    let hal = MockHal::default();
+    let status = hal.nfc_status();
+    assert!(status.available && status.ready);
+    assert!(!status.enabled);
+    hal.set_nfc_enabled(true).unwrap();
+    assert!(hal.nfc_status().enabled);
+}
+
 // --- manifest validation ---------------------------------------------------
 
 #[test]
 fn manifest_accepts_a_well_formed_document() {
     let manifest =
-        Manifest::parse(manifest_json("tech.solwear.demo", &["system", "power"]).as_bytes())
+        Manifest::parse(manifest_json("tech.solwear.demo", &["system", "power", "nfc"]).as_bytes())
             .expect("valid manifest");
     assert_eq!(manifest.id, "tech.solwear.demo");
     assert!(manifest.has_capability("power"));
     assert!(!manifest.has_capability("wallet"));
+    assert!(manifest.has_capability("nfc"));
 }
 
 #[test]
@@ -291,6 +302,11 @@ async fn capabilities_gate_every_namespace() {
         .expect("system.info allowed");
     assert_eq!(info["device"], "test-watch");
     assert_eq!(info["screen"]["shape"], "round");
+    let stats = call(&state, &app, "system.stats", json!({}))
+        .await
+        .expect("system.stats allowed");
+    assert_eq!(stats["platform"]["arch"], std::env::consts::ARCH);
+    assert!(stats["uptimeMs"].is_number());
     let power = call(&state, &app, "power.status", json!({}))
         .await
         .expect("power.status allowed");
@@ -607,6 +623,59 @@ async fn wallet_key_is_stable_and_private() {
 }
 
 #[tokio::test]
+async fn wallet_passphrase_encrypts_at_rest_and_survives_restart() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let state = test_state(dir.path());
+    let public_key = state.wallet.public_key();
+
+    call(
+        &state,
+        &Caller::Shell,
+        "wallet.setPassphrase",
+        json!({
+            "passphrase": "correct horse battery staple",
+            "name": "Primary"
+        }),
+    )
+    .await
+    .expect("protect wallet");
+    call(&state, &Caller::Shell, "wallet.lock", json!({}))
+        .await
+        .expect("lock wallet");
+    let encrypted = std::fs::read(dir.path().join("wallet.key")).unwrap();
+    assert_ne!(encrypted.len(), 32, "the raw seed was replaced");
+    assert!(!String::from_utf8_lossy(&encrypted).contains("correct horse"));
+
+    let wrong = call(
+        &state,
+        &Caller::Shell,
+        "wallet.unlock",
+        json!({ "passphrase": "definitely wrong" }),
+    )
+    .await
+    .expect_err("wrong passphrase is refused");
+    assert_eq!(wrong.code, USER_REJECTED);
+    drop(state);
+
+    let reopened = test_state(dir.path());
+    assert!(
+        reopened.wallet.is_locked(),
+        "an encrypted wallet starts locked"
+    );
+    assert_eq!(reopened.wallet.public_key(), public_key);
+    call(
+        &reopened,
+        &Caller::Shell,
+        "wallet.unlock",
+        json!({ "passphrase": "correct horse battery staple" }),
+    )
+    .await
+    .expect("correct passphrase unlocks after restart");
+    assert!(!reopened.wallet.is_locked());
+    assert_eq!(reopened.wallet.name(), "Primary");
+}
+
+#[tokio::test]
 async fn signing_without_a_shell_is_refused() {
     let dir = tempfile::tempdir().expect("temp dir");
     let state = test_state(dir.path());
@@ -696,6 +765,13 @@ async fn signing_requires_an_affirmative_confirmation() {
     verifying
         .verify(&[1u8, 2, 3], &signature)
         .expect("signature covers the decoded message");
+
+    let activity = call(&state, &Caller::Shell, "wallet.activity", json!({}))
+        .await
+        .expect("activity is readable after signing");
+    assert_eq!(activity["items"].as_array().unwrap().len(), 1);
+    assert_eq!(activity["items"][0]["byteLength"], 3);
+    assert_eq!(activity["items"][0]["appId"], "tech.solwear.signer");
 }
 
 // --- protocol --------------------------------------------------------------

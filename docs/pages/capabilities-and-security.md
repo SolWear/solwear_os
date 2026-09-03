@@ -57,13 +57,14 @@ Capability names map to JSON-RPC method prefixes:
 
 | Capability | Methods | What it really grants |
 | --- | --- | --- |
-| `system` | `system.info`, `system.time` | Device model, OS version, screen geometry, clock, timezone |
+| `system` | `system.info`, `system.time`, `system.stats` | Device model, OS version, screen geometry, clock, timezone and runtime statistics |
 | `power` | `power.status` | Battery percentage, charge state, runtime estimate |
 | `display` | `display.setBrightness` | Control of the backlight |
 | `sensors` | `sensors.read` | Sensor readings, including heart rate |
 | `notifications` | `notifications.list`, `notifications.post` | Read of the whole tray, and the ability to post |
 | `apps` | `apps.list`, `apps.install`, `apps.uninstall`, `apps.launch` | Enumerating, installing, removing and launching software |
-| `wallet` | `wallet.publicKey`, `wallet.signTransaction` | The public key, and the ability to request a signature |
+| `wallet` | wallet lifecycle and signing methods | Public identity, encrypted-wallet controls and the ability to request a signature |
+| `nfc` | `nfc.status`, `nfc.setEnabled`, `nfc.walletRecord`, `nfc.diagnostics` | NFC state and the ability to arm wallet sharing |
 
 A call whose prefix is not in the granted set is rejected with JSON-RPC error
 `-32001`:

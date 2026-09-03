@@ -8,9 +8,15 @@ import type {
   SensorName,
   SensorReading,
   SystemInfo,
+  SystemStats,
   SystemTime,
   WalletPublicKey,
+  WalletStatus,
+  WalletActivity,
   WalletSignature,
+  NfcStatus,
+  NfcWalletRecord,
+  NfcDiagnostics,
 } from "./types.js";
 import type { ScreenInfo } from "./protocol.js";
 
@@ -25,6 +31,11 @@ export class SystemClient {
   /** Wall clock time and the device timezone. */
   time(): Promise<SystemTime> {
     return this.bridge.call<SystemTime>("system.time");
+  }
+
+  /** Runtime health and resource counters from the Linux daemon. */
+  stats(): Promise<SystemStats> {
+    return this.bridge.call<SystemStats>("system.stats");
   }
 
   /**
@@ -130,6 +141,27 @@ export class WalletClient {
     return result.publicKey;
   }
 
+  status(): Promise<WalletStatus> {
+    return this.bridge.call<WalletStatus>("wallet.status");
+  }
+
+  async setPassphrase(passphrase: string, name = "SolWear"): Promise<void> {
+    await this.bridge.call<Record<string, never>>("wallet.setPassphrase", { passphrase, name });
+  }
+
+  async lock(): Promise<void> {
+    await this.bridge.call<Record<string, never>>("wallet.lock");
+  }
+
+  async unlock(passphrase: string): Promise<void> {
+    await this.bridge.call<Record<string, never>>("wallet.unlock", { passphrase });
+  }
+
+  async activity(): Promise<WalletActivity[]> {
+    const result = await this.bridge.call<{ items: WalletActivity[] }>("wallet.activity");
+    return result.items ?? [];
+  }
+
   /**
    * Ask the device to sign a serialised Solana transaction message.
    *
@@ -148,5 +180,25 @@ export class WalletClient {
       ...options,
     });
     return result.signature;
+  }
+}
+
+export class NfcClient {
+  constructor(private readonly bridge: Bridge) {}
+
+  status(): Promise<NfcStatus> {
+    return this.bridge.call<NfcStatus>("nfc.status");
+  }
+
+  async setEnabled(enabled: boolean): Promise<void> {
+    await this.bridge.call<Record<string, never>>("nfc.setEnabled", { enabled });
+  }
+
+  walletRecord(): Promise<NfcWalletRecord> {
+    return this.bridge.call<NfcWalletRecord>("nfc.walletRecord");
+  }
+
+  diagnostics(): Promise<NfcDiagnostics> {
+    return this.bridge.call<NfcDiagnostics>("nfc.diagnostics");
   }
 }

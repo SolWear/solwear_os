@@ -5,8 +5,8 @@ SolWear ships two emulators, and they are for different jobs.
 | | Host simulator | QEMU emulator |
 | --- | --- | --- |
 | Path | `emulator/host` | `emulator/qemu` |
-| What it runs | The real shell and your real app bundle in a desktop window | The actual built Raspberry Pi image |
-| Backed by | `MockHal` | The real daemon on emulated aarch64 |
+| What it runs | The real shell and app bundles in a desktop window | A real ARM64 Debian VM with the production daemon |
+| Backed by | Protocol-compatible JavaScript daemon + `MockHal` | Production Rust `solweard` + `MockHal` |
 | Start time | Under two seconds | Tens of seconds |
 | Use it for | Everything, all day | Validating an image before you flash it |
 
@@ -20,13 +20,14 @@ with the real system, and you want to see the thing actually boot.
 solwear run
 ```
 
-From inside an app directory this builds the app, starts `solweard` with
-`SOLWEAR_HAL=mock`, and opens a desktop window rendering the real system shell
-with your app loaded inside it.
+From inside an app directory this builds the app, starts the fast
+protocol-compatible daemon with `MockHal`, and opens a desktop window rendering
+the real system shell with your app loaded inside it.
 
 This is not a mock of the shell. It is the shell — the same TypeScript that runs
-on the device, served by the same daemon, talking the same JSON-RPC over the
-same WebSocket. Only the hardware abstraction layer underneath is different.
+on the device, talking the same JSON-RPC over the same WebSocket. The lightweight
+daemon is an independently tested protocol twin; use QEMU when behavior must be
+checked against the production Rust daemon and systemd.
 That is the direct payoff of the decision to make the shell and every app
 ordinary web content.
 
@@ -118,6 +119,15 @@ The simulator window has controls for the buttons the profile declares, and the
 window accepts drag gestures. Both are delivered to your app as the `button` and
 `gesture` events, identically to hardware.
 
+### Developer cockpit
+
+The right-hand panel is intentionally outside the emulated watch screen. It
+shows requests, errors, uptime and live RPC activity, and lets a developer set
+battery, charging, brightness, steps, heart rate, temperature and ambient light
+without editing a fixture or restarting. It can also inject notifications.
+These controls mutate only `MockHal`; app code still receives values through
+the normal capability-gated API.
+
 ### Running the shell without an app
 
 From the repository root:
@@ -132,17 +142,24 @@ loaded. Useful when working on the shell itself rather than on an app.
 ## The QEMU emulator
 
 ```bash
+./emulator/qemu/build-image.sh
 solwear run --qemu
 ```
 
-This boots the actual built image with `qemu-system-aarch64`, a virtio display,
-and a port forward to the daemon. It is much slower than the host simulator and
-it is not where you develop UI. What it gives you that the host simulator cannot
-is the real image: the real systemd units, `cage` and Chromium actually
-starting, the daemon coming up in the real boot order, and the real install
-path.
+This boots an official Debian Bookworm ARM64 cloud image with
+`qemu-system-aarch64`, then starts the production static `solweard` binary under
+systemd. HTTP, JSON-RPC and SSH are forwarded to the host. It is a real Linux
+VM: `/proc`, filesystem accounting, process RSS, load averages, systemd and the
+aarch64 executable are genuine guest behavior.
 
-Use it before you flash hardware, and in CI when the image build changes.
+It is deliberately not the byte-for-byte Raspberry Pi image. Pi OS boots via
+Pi firmware and a Pi device tree, while QEMU's portable `virt` machine boots via
+UEFI and virtio. The VM validates Linux/ARM64, the daemon, package installation
+and boot ordering; only a physical Pi validates its display, I2C, NFC, battery
+and backlight drivers. The browser stays on the host and renders the shell
+served by the guest, which makes headless automation reliable.
+
+Use it before you flash hardware, and in CI when the daemon or VM build changes.
 
 ### Missing QEMU
 
@@ -165,12 +182,11 @@ can develop apps indefinitely without it.
 
 ### Installing into QEMU
 
-The port forward means the same install command works against the emulated
-device:
+The SSH port is forwarded to `2222` by default:
 
 ```bash
 solwear package
-solwear install --device 127.0.0.1:2222
+solwear install --device 127.0.0.1 --port 2222
 ```
 
 That exercises the real verification path — SHA-256, Ed25519, manifest

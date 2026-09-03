@@ -32,13 +32,14 @@ script tag; it defines `window.solwear`.
 
 | Namespace | Methods |
 | --- | --- |
-| `system` | `info()`, `time()`, `screen` (synchronous, valid after `ready()`) |
+| `system` | `info()`, `time()`, `stats()`, `screen` (synchronous, valid after `ready()`) |
 | `power` | `status()` |
 | `display` | `setBrightness(percent)` |
 | `sensors` | `read(sensor)` |
 | `notifications` | `list()`, `post({ title, body })` |
 | `apps` | `list()`, `install(source)`, `uninstall(id)`, `launch(id)` |
-| `wallet` | `publicKey()`, `signTransaction(base64Message)` |
+| `wallet` | `publicKey()`, `status()`, `lock()`, `unlock()`, `activity()`, `signTransaction()` |
+| `nfc` | `status()`, `setEnabled()`, `walletRecord()`, `diagnostics()` |
 
 ## Events
 

@@ -146,12 +146,13 @@ describe("the daemon comes up on ephemeral ports", () => {
     assert.equal(shell.status, 200);
     assert.match(await shell.text(), /<html/i);
 
-    // The shell must be able to find the socket without assuming a port, and
-    // the policy that lets it connect has to name the port actually in use.
-    assert.match(
-      shell.headers.get("content-security-policy") ?? "",
-      new RegExp(`connect-src ws://127\\.0\\.0\\.1:${new URL(world.daemon.rpcUrl).port}\\b`),
-    );
+    // Native runs connect directly to the bound port. The QEMU shell is served
+    // from the guest but connects through a configurable host-forwarded port,
+    // so its shell-only policy also permits loopback WebSocket ports. Sandboxed
+    // app documents retain `connect-src 'none'` below.
+    const shellCsp = shell.headers.get("content-security-policy") ?? "";
+    const boundRpc = `ws://127.0.0.1:${new URL(world.daemon.rpcUrl).port}`;
+    assert.ok(shellCsp.includes(boundRpc) || shellCsp.includes("ws://127.0.0.1:*"));
     const document = await (await fetch(`${world.daemon.httpUrl}/system.json`)).json();
     assert.equal(document.rpcUrl, world.daemon.rpcUrl);
   });

@@ -1,0 +1,1 @@
+{"id":"tech.solwear.games","name":"Games","version":"0.1.0","sdk":"0.1","type":"app","entry":"index.html","capabilities":["system","notifications"],"author":"SolWear","description":"Ping Pong, Tetris and Tamagotchi from SolWearOS Prototype V2."}

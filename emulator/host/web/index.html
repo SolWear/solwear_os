@@ -3,7 +3,33 @@
   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SolWear Emulator</title><link rel="stylesheet" href="/emulator/emulator.css"></head>
   <body>
     <header><strong>SolWear Emulator</strong><label>Device <select id="profile"></select></label><span id="status">starting…</span></header>
-    <main><div id="device"><iframe id="shell" src="/shell/" title="SolWear device"></iframe></div></main>
+    <main>
+      <section class="preview"><div id="device"><iframe id="shell" src="/shell/" title="SolWear device"></iframe></div></section>
+      <aside id="devtools">
+        <div class="dev-title"><strong>Developer tools</strong><span id="dev-live">connecting</span></div>
+        <div class="metrics">
+          <article><b id="metric-uptime">0s</b><small>uptime</small></article>
+          <article><b id="metric-rpc">0</b><small>RPC calls</small></article>
+          <article><b id="metric-sockets">0</b><small>sockets</small></article>
+          <article><b id="metric-errors">0</b><small>errors</small></article>
+        </div>
+        <fieldset><legend>Mock HAL</legend>
+          <label>Battery <output id="battery-out"></output><input id="battery-control" type="range" min="0" max="100"></label>
+          <label class="toggle"><input id="charging-control" type="checkbox"> Charging</label>
+          <label class="toggle"><input id="nfc-control" type="checkbox"> NFC Type 4 target</label>
+          <label>Brightness <output id="brightness-out"></output><input id="brightness-control" type="range" min="0" max="100"></label>
+          <div class="sensor-grid">
+            <label>Steps<input id="steps-control" type="number" min="0"></label>
+            <label>Heart rate<input id="heart-control" type="number" min="20" max="240"></label>
+            <label>Temperature<input id="temp-control" type="number" min="-20" max="100" step="0.1"></label>
+          </div>
+          <button id="inject-notification" type="button">Inject notification</button>
+        </fieldset>
+        <div class="inspect"><span id="dev-summary"></span><code id="wallet"></code><code id="nfc-status"></code></div>
+        <div class="log-title"><strong>RPC activity</strong><button id="pause-log" type="button">Pause</button></div>
+        <ol id="rpc-log"></ol>
+      </aside>
+    </main>
     <script type="module" src="/emulator/emulator.js"></script>
   </body>
 </html>

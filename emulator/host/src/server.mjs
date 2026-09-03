@@ -71,6 +71,10 @@ export class EmulatorServer {
     /** Pending wallet confirmations, keyed by request id. */
     this.confirmations = new Map();
     this.nextConfirmId = 1;
+    this.startedAt = Date.now();
+    this.rpcCount = 0;
+    this.rpcErrors = 0;
+    this.devLog = [];
 
     this.http = createServer((request, response) => this.onRequest(request, response));
     this.rpc = createServer((_request, response) => {
@@ -131,7 +135,18 @@ export class EmulatorServer {
         return;
       }
       const callerId = boundAppId ?? stampedAppId ?? "system";
+      this.rpcCount += 1;
+      const before = Date.now();
       const response = await this.daemon.handle(request, callerId);
+      if (response?.error) this.rpcErrors += 1;
+      this.record({
+        at: Date.now(),
+        caller: callerId,
+        method: request.method,
+        ok: !response?.error,
+        durationMs: Date.now() - before,
+        error: response?.error?.message,
+      });
       if (response) connection.sendJson(response);
     });
   }
@@ -195,6 +210,8 @@ export class EmulatorServer {
       });
     }
     if (path === "/emulator/state.json") return this.sendJson(response, this.state());
+    if (path === "/emulator/devtools.json") return this.sendJson(response, this.devtools());
+    if (path === "/emulator/control") return this.control(response, url.searchParams);
     if (path === "/emulator/profile") return this.switchProfile(response, url.searchParams.get("id"));
     if (path === "/emulator/reload") return this.subscribeToReloads(response);
 
@@ -240,6 +257,62 @@ export class EmulatorServer {
       shellSource: this.options.shellSource,
       systemApps: this.options.systemApps ?? [],
     };
+  }
+
+  record(entry) {
+    this.devLog.push(entry);
+    if (this.devLog.length > 100) this.devLog.splice(0, this.devLog.length - 100);
+  }
+
+  devtools() {
+    return {
+      uptimeMs: Date.now() - this.startedAt,
+      rpcCount: this.rpcCount,
+      rpcErrors: this.rpcErrors,
+      connections: this.sockets.size,
+      reloadClients: this.reloadClients.size,
+      profile: this.profile.id,
+      app: { id: this.options.appManifest.id, name: this.options.appManifest.name },
+      hal: this.daemon.hal.snapshot(),
+      notifications: this.daemon.notifications.length,
+      apps: this.daemon.apps.size,
+      wallet: this.daemon.walletAddress,
+      nfc: { enabled: this.daemon.nfcEnabled, ready: true, backend: "mock-pn532" },
+      log: this.devLog.slice(-30).reverse(),
+    };
+  }
+
+  control(response, params) {
+    try {
+      const name = params.get("name");
+      const value = params.get("value");
+      if (name === "notification") {
+        const notification = {
+          id: `dev-${Date.now()}`,
+          title: value || "Developer notification",
+          body: "Injected from the emulator cockpit",
+          appId: "system",
+          timestampMs: Date.now(),
+          read: false,
+        };
+        this.daemon.notifications.push(notification);
+        this.daemon.broadcast?.("notifications.posted", { notification });
+        this.record({ at: Date.now(), caller: "developer", method: "notifications.inject", ok: true, durationMs: 0 });
+      } else if (name === "nfc") {
+        this.daemon.nfcEnabled = value === "true" || value === "1";
+        this.daemon.broadcast?.("nfc.statusChanged", { enabled: this.daemon.nfcEnabled });
+        this.record({ at: Date.now(), caller: "developer", method: "nfc.setEnabled", ok: true, durationMs: 0 });
+      } else if (name) {
+        this.daemon.hal.control(name, value);
+        if (name === "brightness") this.daemon.broadcast?.("display.brightnessChanged", { percent: this.daemon.hal.brightness });
+        this.record({ at: Date.now(), caller: "developer", method: `hal.${name}`, ok: true, durationMs: 0 });
+      } else {
+        throw new Error("missing control name");
+      }
+      this.sendJson(response, this.devtools());
+    } catch (error) {
+      this.sendText(response, 400, error.message);
+    }
   }
 
   /**

@@ -1,1 +1,1 @@
-{"id":"tech.solwear.watchface","name":"SolWear Face","version":"0.1.0","sdk":"0.1","type":"watchface","entry":"index.html","capabilities":["system","power"],"author":"SolWear","description":"Adaptive reference watchface for round and wide displays."}
+{"id":"tech.solwear.watchface","name":"SolWear Faces","version":"0.2.0","sdk":"0.1","type":"watchface","entry":"index.html","capabilities":["system","power","sensors"],"author":"SolWear","description":"Six adaptive watchfaces ported from SolWearOS Prototype V2."}

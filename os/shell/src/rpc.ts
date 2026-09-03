@@ -208,6 +208,14 @@ export function defaultUrl(): string {
  * daemon rather than refusing to start.
  */
 export async function discoverRpcUrl(): Promise<string> {
+  // A full-system emulator serves the shell from inside a guest VM while the
+  // browser and WebSocket client live on the host.  The QEMU launcher appends
+  // the forwarded socket as `?rpc=...`; accepting it here keeps the on-device
+  // discovery path unchanged and also lets several VMs use different ports.
+  const forwarded = new URLSearchParams(window.location.search).get("rpc");
+  if (forwarded?.startsWith("ws://127.0.0.1:") || forwarded?.startsWith("ws://localhost:")) {
+    return forwarded;
+  }
   try {
     const response = await fetch("/system.json", { cache: "no-store" });
     if (!response.ok) return defaultUrl();

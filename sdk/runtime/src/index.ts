@@ -18,6 +18,7 @@ import {
   SensorsClient,
   SystemClient,
   WalletClient,
+  NfcClient,
 } from "./clients.js";
 import type { Listener } from "./emitter.js";
 import type { EventName, SolwearEvents } from "./types.js";
@@ -34,6 +35,7 @@ export class Solwear {
   readonly notifications: NotificationsClient;
   readonly apps: AppsClient;
   readonly wallet: WalletClient;
+  readonly nfc: NfcClient;
 
   constructor(bridge: Bridge = new Bridge(SDK_VERSION)) {
     this.bridge = bridge;
@@ -44,6 +46,7 @@ export class Solwear {
     this.notifications = new NotificationsClient(bridge);
     this.apps = new AppsClient(bridge);
     this.wallet = new WalletClient(bridge);
+    this.nfc = new NfcClient(bridge);
   }
 
   /**
@@ -109,5 +112,6 @@ export {
   SensorsClient,
   SystemClient,
   WalletClient,
+  NfcClient,
 } from "./clients.js";
 export { layout, type LayoutMetrics } from "./layout.js";

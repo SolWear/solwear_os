@@ -32,6 +32,18 @@ test("wallet signs only after an affirmative confirmation", async () => {
   assert.match(signed.result.signature, /^[1-9A-HJ-NP-Za-km-z]+$/);
 });
 
+test("NFC mock exposes the legacy wallet NDEF contract", async () => {
+  const nfcApp = { ...app, capabilities: ["nfc"] };
+  const daemon = new MockDaemon({ profile, apps: [nfcApp] });
+  const armed = await daemon.handle({ jsonrpc: "2.0", id: 1, method: "nfc.setEnabled", params: { enabled: true } }, app.id);
+  assert.deepEqual(armed.result, {});
+  const record = await daemon.handle({ jsonrpc: "2.0", id: 2, method: "nfc.walletRecord" }, app.id);
+  assert.equal(record.result.externalType, "solwear:wallet");
+  assert.equal(record.result.payload.version, 1);
+  assert.equal(record.result.payload.network, "devnet");
+  assert.match(record.result.payload.pubkey, /^[1-9A-HJ-NP-Za-km-z]+$/);
+});
+
 test("host server serves the shell/app and speaks JSON-RPC over WebSocket", async (context) => {
   const root = mkdtempSync(join(tmpdir(), "solwear-emulator-"));
   const webDir = join(root, "web"); const shellDir = join(root, "shell"); const appDir = join(root, "app");
@@ -41,6 +53,9 @@ test("host server serves the shell/app and speaks JSON-RPC over WebSocket", asyn
   await server.listen(); context.after(() => server.close());
   assert.equal(await fetch(server.url).then((response) => response.text()), "emulator");
   assert.equal(await fetch(`${server.url}apps/${app.id}/index.html`).then((response) => response.text()), "app");
+  const devtools = await fetch(`${server.url}emulator/devtools.json`).then((response) => response.json());
+  assert.equal(devtools.profile, profile.id);
+  assert.equal(devtools.hal.power.percent, 73);
 
   const socket = new WebSocket(`ws://127.0.0.1:${server.options.rpcPort}/rpc?appId=${app.id}`);
   await new Promise((resolve, reject) => {

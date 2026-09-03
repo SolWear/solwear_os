@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
 /// How long a wallet confirmation prompt stays on screen before it is treated
@@ -28,6 +29,17 @@ pub struct Notification {
     pub title: String,
     pub body: String,
     pub app_id: String,
+    pub timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletActivity {
+    pub id: String,
+    pub app_id: String,
+    pub label: String,
+    pub digest: String,
+    pub byte_length: usize,
     pub timestamp_ms: u64,
 }
 
@@ -66,9 +78,11 @@ pub struct AppState {
     /// — has to read the resolved address rather than the configured one.
     bound: Mutex<BoundAddrs>,
     notifications: Mutex<Vec<Notification>>,
+    wallet_activity: Mutex<Vec<WalletActivity>>,
     next_id: AtomicU64,
     shells: Mutex<Vec<mpsc::UnboundedSender<String>>>,
     pending_confirms: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    started_at: Instant,
 }
 
 impl AppState {
@@ -80,6 +94,10 @@ impl AppState {
             rpc: config.rpc_addr,
             http: config.http_addr,
         };
+        let wallet_activity = std::fs::read(config.data_dir.join("wallet-activity.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
         Ok(Arc::new(AppState {
             bound: Mutex::new(bound),
             config,
@@ -87,10 +105,57 @@ impl AppState {
             apps,
             wallet,
             notifications: Mutex::new(Vec::new()),
+            wallet_activity: Mutex::new(wallet_activity),
             next_id: AtomicU64::new(1),
             shells: Mutex::new(Vec::new()),
             pending_confirms: Mutex::new(HashMap::new()),
+            started_at: Instant::now(),
         }))
+    }
+
+    pub fn uptime_ms(&self) -> u64 {
+        self.started_at.elapsed().as_millis() as u64
+    }
+
+    pub fn notification_count(&self) -> usize {
+        self.notifications.lock().expect("notifications").len()
+    }
+
+    pub fn record_wallet_activity(
+        &self,
+        app_id: String,
+        label: String,
+        digest: String,
+        byte_length: usize,
+    ) {
+        let item = WalletActivity {
+            id: format!("tx{}", self.next_sequence()),
+            app_id,
+            label,
+            digest,
+            byte_length,
+            timestamp_ms: self.hal.now_ms(),
+        };
+        let mut activity = self.wallet_activity.lock().expect("wallet activity");
+        activity.push(item.clone());
+        if activity.len() > 128 {
+            let overflow = activity.len() - 128;
+            activity.drain(0..overflow);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(&*activity) {
+            let _ = std::fs::write(self.config.data_dir.join("wallet-activity.json"), bytes);
+        }
+        self.push_event("wallet.activity", json!({ "activity": item }));
+    }
+
+    pub fn wallet_activity(&self) -> Vec<WalletActivity> {
+        let mut items = self
+            .wallet_activity
+            .lock()
+            .expect("wallet activity")
+            .clone();
+        items.reverse();
+        items
     }
 
     /// Record the addresses the listeners actually bound to.

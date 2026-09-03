@@ -119,6 +119,21 @@ textarea {
   font-weight: 600;
 }
 
+.nfc {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: calc(var(--sw-base) * 0.022) calc(var(--sw-base) * 0.045);
+  background: var(--field);
+  color: var(--ink);
+  font-size: calc(var(--sw-base) * 0.038);
+}
+
+.nfc.armed {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
 .sign:disabled {
   opacity: 0.4;
 }
@@ -143,6 +158,19 @@ textarea {
   color: var(--bad);
 }
 
+.history {
+  min-height: 0;
+  font-size: calc(var(--sw-base) * 0.032);
+  color: var(--ink-dim);
+}
+
+#activity span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /*
  * The smallest panels cannot carry the eyebrow and the signature echo as well
  * as the controls. They are context, not the decision, so they are the first
@@ -150,7 +178,8 @@ textarea {
  */
 @media (max-width: 280px), (max-height: 280px) {
   .eyebrow,
-  .signature {
+  .signature,
+  .history {
     display: none;
   }
 }

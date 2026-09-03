@@ -1,0 +1,1 @@
+{"id":"tech.solwear.stats","name":"Stats","version":"0.1.0","sdk":"0.1","type":"app","entry":"index.html","capabilities":["system","power","sensors"],"author":"SolWear","description":"Live health, activity, battery and Linux system telemetry."}

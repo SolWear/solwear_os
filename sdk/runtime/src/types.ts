@@ -15,6 +15,17 @@ export interface SystemTime {
   timezone: string;
 }
 
+export interface SystemStats {
+  uptimeMs: number;
+  platform: { os: string; arch: string };
+  memory: { totalBytes: number; availableBytes: number; processBytes: number };
+  storage: { totalBytes: number; availableBytes: number };
+  load: { one: number; five: number; fifteen: number };
+  apps: number;
+  notifications: number;
+  shellConnected: boolean;
+}
+
 export interface PowerStatus {
   percent: number;
   charging: boolean;
@@ -63,6 +74,44 @@ export interface WalletPublicKey {
 
 export interface WalletSignature {
   signature: string;
+}
+
+export interface WalletStatus {
+  onboarded: boolean;
+  locked: boolean;
+  protected: boolean;
+  name: string;
+  publicKey: string;
+}
+
+export interface WalletActivity {
+  id: string;
+  appId: string;
+  label: string;
+  digest: string;
+  byteLength: number;
+  timestampMs: number;
+}
+
+export interface NfcStatus {
+  available: boolean;
+  ready: boolean;
+  enabled: boolean;
+  backend: string;
+  mode: string;
+  detail?: string;
+}
+
+export interface NfcWalletRecord {
+  externalType: "solwear:wallet";
+  payload: { version: 1; pubkey: string; network: string };
+}
+
+export interface NfcDiagnostics {
+  status: NfcStatus;
+  expectedDevice: string;
+  address: string;
+  protocol: string;
 }
 
 /** Emitted once a second while the app is the visible surface. */

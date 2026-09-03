@@ -27,6 +27,7 @@
       "title": "Guides",
       "items": [
         { "title": "Using the Emulator", "src": "pages/using-the-emulator.md", "out": "using-the-emulator.html" },
+        { "title": "ESP32 Migration Status", "src": "LEGACY_MIGRATION.md", "out": "legacy-migration.html" },
         { "title": "Publishing to the Store", "src": "pages/publishing-to-the-store.md", "out": "publishing-to-the-store.html" },
         { "title": "Flashing a Raspberry Pi", "src": "pages/flashing-a-raspberry-pi.md", "out": "flashing-a-raspberry-pi.html" }
       ]

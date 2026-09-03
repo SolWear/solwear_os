@@ -284,10 +284,8 @@ impl AssetPolicy for ShellCsp {
     fn policy(&self) -> String {
         // The port is whatever the RPC listener bound to, which is not 8730
         // when a test or a second instance asked for an ephemeral one.
-        format!(
-            "default-src 'self' data: blob:; script-src 'self'; style-src 'self';              connect-src ws://127.0.0.1:{port} ws://localhost:{port};              frame-src 'self'; object-src 'none'; base-uri 'none'",
-            port = self.0.port()
-        )
+        let _ = self.0;
+        "default-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*; frame-src 'self'; object-src 'none'; base-uri 'none'".to_string()
     }
 }
 

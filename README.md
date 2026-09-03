@@ -10,7 +10,7 @@ app on a platform — so we made the platform the product.
 
 SolWear OS is that platform. It runs on a Raspberry Pi 4 or 5 today, it renders
 correctly on round and square screens from 240x240 to 800x480, and the original
-signer now ships as one of three first-party apps on top of it.
+signer now ships as one of five first-party apps on top of it.
 
 > Status: v0.1, under active development. The architecture is settled and
 > documented in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), which is the
@@ -30,9 +30,10 @@ signer now ships as one of three first-party apps on top of it.
 - **A capability-gated sandbox.** Apps run in a sandboxed iframe and reach the
   system only through a bridge that enforces the capabilities in their manifest.
   A call outside the granted set is rejected with JSON-RPC error `-32001`.
-- **An emulator you will actually use.** The host simulator boots the real shell
-  and the real app bundle against a mock HAL in under two seconds. A QEMU
-  emulator boots the actual image when you need to validate it before flashing.
+- **Two useful emulation levels.** The host simulator boots the real shell and
+  app bundles against a protocol-compatible mock daemon in under two seconds,
+  with live HAL controls and RPC diagnostics. QEMU boots a real ARM64 Debian
+  Linux kernel/userspace and runs the production Rust daemon under systemd.
 - **A signed app store.** `.swa` packages, Ed25519 signatures over a canonical
   SHA-256 file list, and a registry where publishing is a reviewed pull request.
 
@@ -129,9 +130,11 @@ node docs/build.mjs && open docs/dist/index.html
 | `sdk/vscode/` | VS Code extension: commands, templates, emulator control |
 | `emulator/host/` | Fast PC simulator — shell plus mock HAL in a desktop window |
 | `emulator/qemu/` | Full aarch64 image boot under `qemu-system-aarch64` |
-| `apps/watchface/` | Demo app: the default watchface |
-| `apps/signer/` | Demo app: Solana transaction signer, the original SolWear product |
+| `apps/watchface/` | Six switchable faces ported from the ESP32 product |
+| `apps/signer/` | Solana signer and recent signing activity |
 | `apps/store/` | System app: browses the registry, installs `.swa` packages |
+| `apps/stats/` | Steps, heart rate, temperature and Linux resource statistics |
+| `apps/games/` | Ping Pong, Tetris and Tamagotchi |
 | `store/registry/` | The signed app registry, its JSON Schemas, and the validator |
 | `image/` | Raspberry Pi image build scripts and systemd units |
 | `tests/e2e/` | The end-to-end test: the whole stack in one run, no hardware and no QEMU |
@@ -152,6 +155,7 @@ node docs/build.mjs && open docs/dist/index.html
 | [Using the Emulator](docs/pages/using-the-emulator.md) | Host simulator and QEMU, device profiles |
 | [Publishing to the Store](docs/pages/publishing-to-the-store.md) | Packaging, signing, the registry pull request |
 | [Flashing a Raspberry Pi](docs/pages/flashing-a-raspberry-pi.md) | Building the image and booting real hardware |
+| [ESP32 Migration Status](docs/LEGACY_MIGRATION.md) | Ported features and the hardware validation boundary |
 
 ## Contributing
 

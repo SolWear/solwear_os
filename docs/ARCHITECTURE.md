@@ -46,6 +46,8 @@ emulator/qemu/    Full aarch64 image boot under QEMU
 apps/watchface/   Demo app: default watchface
 apps/signer/      Demo app: Solana transaction signer (the original SolWear product)
 apps/store/       System app: browses the registry, installs .swa packages
+apps/stats/       Health readings and Linux runtime statistics
+apps/games/       Ping Pong, Tetris and Tamagotchi
 store/registry/   Signed app registry (JSON index + package hosting rules)
 image/            Raspberry Pi image build scripts and systemd units
 docs/             Developer documentation site
@@ -82,6 +84,7 @@ positional arrays.
 ```
 system.info            -> { version, device, screen: { width, height, shape } }
 system.time            -> { epochMs, timezone }
+system.stats           -> { uptimeMs, platform, memory, storage, load, apps, notifications, shellConnected }
 power.status           -> { percent, charging, estimateMinutes }
 display.setBrightness  { percent }            -> {}
 sensors.read           { sensor }             -> { sensor, value, unit, timestampMs }
@@ -93,6 +96,11 @@ apps.install           { source, expectedSha256?, expectedPublisherKey? }
 apps.uninstall         { appId }              -> {}
 apps.launch            { appId }              -> {}
 wallet.publicKey       -> { publicKey }
+wallet.status          -> { onboarded, locked, protected, name, publicKey }
+wallet.setPassphrase   { passphrase, name? }  -> {}
+wallet.lock            -> {}
+wallet.unlock          { passphrase }         -> {}
+wallet.activity        -> { items: [ WalletActivity ] }
 wallet.signTransaction { appId, message }     -> { signature }   // requires user confirm on device
 ```
 
@@ -106,7 +114,7 @@ Each app declares capabilities in its manifest. `solweard` rejects any RPC call
 whose method is outside the calling app's granted capabilities, with JSON-RPC
 error code `-32001`. Capability names map to method prefixes:
 
-`system`, `power`, `display`, `sensors`, `notifications`, `apps`, `wallet`.
+`system`, `power`, `display`, `sensors`, `notifications`, `apps`, `wallet`, `nfc`.
 
 ## 5. App package format (`.swa`)
 
@@ -181,7 +189,7 @@ const screen = solwear.system.screen;           // { width, height, shape }
 ```
 
 The SDK must expose: `system`, `power`, `display`, `sensors`, `notifications`,
-`wallet`, plus an event emitter with the events `tick`, `visibility`,
+`apps`, `wallet`, `nfc`, plus an event emitter with the events `tick`, `visibility`,
 `button`, and `gesture`. Every method is typed and returns a promise.
 
 ## 7. Shell
@@ -225,9 +233,10 @@ and mock sensor scripts; ship at least `pi-round-480`, `pi-square-320`, and
 `pi-wide-800x480`. The window frame must draw the device bezel so round screens
 are visibly round.
 
-**QEMU emulator** (`emulator/qemu`): boots the actual built image with
-`qemu-system-aarch64`, virtio display, port forward to the daemon. Slower, used
-to validate the real image before flashing. It must detect a missing
+**QEMU emulator** (`emulator/qemu`): boots a real Debian Bookworm ARM64 guest
+with `qemu-system-aarch64`, production `solweard` under systemd, and port
+forwards to the daemon. It uses a UEFI/virtio disk rather than the Pi firmware
+image; physical Pi peripherals remain a hardware test. It must detect a missing
 `qemu-system-aarch64` and print the exact install command rather than failing
 with a stack trace.
 

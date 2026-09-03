@@ -100,13 +100,14 @@ method prefix:
 
 | Capability | Methods it unlocks |
 | --- | --- |
-| `system` | `system.info`, `system.time` |
+| `system` | `system.info`, `system.time`, `system.stats` |
 | `power` | `power.status` |
 | `display` | `display.setBrightness` |
 | `sensors` | `sensors.read` |
 | `notifications` | `notifications.list`, `notifications.post` |
 | `apps` | `apps.list`, `apps.install`, `apps.uninstall`, `apps.launch` |
-| `wallet` | `wallet.publicKey`, `wallet.signTransaction` |
+| `wallet` | public key, status, lock/unlock, activity and signing methods |
+| `nfc` | `nfc.status`, `nfc.setEnabled`, `nfc.walletRecord`, `nfc.diagnostics` |
 
 `solweard` rejects any call whose method prefix is outside this list with
 JSON-RPC error code `-32001`. There is no runtime prompt to widen the set: what

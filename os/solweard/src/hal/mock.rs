@@ -25,8 +25,8 @@
 //! cycle through it in order, so repeated reads are reproducible.
 
 use super::{
-    sensor_unavailable, system_now_ms, Hal, NetworkStatus, PowerStatus, Screen, ScreenShape,
-    SensorReading,
+    sensor_unavailable, system_now_ms, Hal, NetworkStatus, NfcStatus, PowerStatus, Screen,
+    ScreenShape, SensorReading,
 };
 use crate::error::RpcError;
 use serde::Deserialize;
@@ -101,6 +101,7 @@ struct SensorTrack {
 #[derive(Debug)]
 struct MockState {
     brightness: u8,
+    nfc_enabled: bool,
     clock_ms: Option<u64>,
     sensors: BTreeMap<String, SensorTrack>,
 }
@@ -196,6 +197,7 @@ impl MockHal {
             tick_ms: script.tick_ms.unwrap_or(0),
             state: Mutex::new(MockState {
                 brightness: script.brightness.unwrap_or(70).min(100),
+                nfc_enabled: false,
                 clock_ms: script.epoch_ms,
                 sensors,
             }),
@@ -285,6 +287,22 @@ impl Hal for MockHal {
 
     fn network(&self) -> NetworkStatus {
         self.network.clone()
+    }
+
+    fn nfc_status(&self) -> NfcStatus {
+        NfcStatus {
+            available: true,
+            ready: true,
+            enabled: self.state.lock().expect("mock hal state").nfc_enabled,
+            backend: "mock-pn532".to_string(),
+            mode: "type4-wallet".to_string(),
+            detail: Some("emulated PN532/NDEF transport".to_string()),
+        }
+    }
+
+    fn set_nfc_enabled(&self, enabled: bool) -> Result<(), RpcError> {
+        self.state.lock().expect("mock hal state").nfc_enabled = enabled;
+        Ok(())
     }
 
     fn now_ms(&self) -> u64 {

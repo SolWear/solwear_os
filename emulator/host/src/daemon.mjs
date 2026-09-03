@@ -57,6 +57,7 @@ export class MockDaemon {
     for (const manifest of apps) this.apps.set(manifest.id, manifest);
 
     this.notifications = [];
+    this.walletActivity = [];
     this.launchListeners = new Set();
 
     // A throwaway wallet. It is regenerated on every start precisely so that
@@ -66,6 +67,11 @@ export class MockDaemon {
     this.walletPrivateKey = privateKey;
     this.walletPublicKeyRaw = publicKey.export({ format: "der", type: "spki" }).subarray(-32);
     this.walletAddress = base58(this.walletPublicKeyRaw);
+    this.walletLocked = false;
+    this.walletProtected = false;
+    this.walletName = "SolWear Emulator";
+    this.walletPassphraseDigest = null;
+    this.nfcEnabled = false;
 
     /**
      * Set by the server to the function that asks the wearer to confirm.
@@ -82,7 +88,7 @@ export class MockDaemon {
   }
 
   capabilitiesFor(appId) {
-    if (appId === "system") return ["system", "power", "display", "sensors", "notifications", "apps", "wallet", "shell"];
+    if (appId === "system") return ["system", "power", "display", "sensors", "notifications", "apps", "wallet", "nfc", "shell"];
     return this.apps.get(appId)?.capabilities ?? [];
   }
 
@@ -145,6 +151,19 @@ export class MockDaemon {
         return this.hal.time();
       case "system.network":
         return { connected: true, ssid: "SolWear Emulator", signal: 100 };
+      case "system.stats": {
+        const memory = process.memoryUsage();
+        return {
+          uptimeMs: Date.now() - this.hal.startedAt,
+          platform: { os: process.platform, arch: process.arch },
+          memory: { totalBytes: 0, availableBytes: 0, processBytes: memory.rss },
+          storage: { totalBytes: 0, availableBytes: 0 },
+          load: { one: 0, five: 0, fifteen: 0 },
+          apps: this.apps.size,
+          notifications: this.notifications.length,
+          shellConnected: true,
+        };
+      }
 
       case "power.status":
         return this.hal.power();
@@ -173,6 +192,21 @@ export class MockDaemon {
         }
         return reading;
       }
+
+      case "nfc.status":
+        return { available: true, ready: true, enabled: this.nfcEnabled, backend: "mock-pn532", mode: "type4-wallet", detail: "emulated PN532/NDEF transport" };
+      case "nfc.setEnabled":
+        if (typeof params.enabled !== "boolean") throw MockDaemon.rpcError(ERR_INVALID_PARAMS, '"enabled" must be a boolean');
+        this.nfcEnabled = params.enabled;
+        this.broadcast?.("nfc.statusChanged", { enabled: this.nfcEnabled });
+        return {};
+      case "nfc.walletRecord":
+        return { externalType: "solwear:wallet", payload: { version: 1, pubkey: this.walletAddress, network: "devnet" } };
+      case "nfc.diagnostics":
+        return {
+          status: { available: true, ready: true, enabled: this.nfcEnabled, backend: "mock-pn532", mode: "type4-wallet", detail: "emulated PN532/NDEF transport" },
+          expectedDevice: "/dev/i2c-1", address: "0x24", protocol: "NFC Forum Type 4 / external type NDEF",
+        };
 
       case "notifications.list":
         return { items: [...this.notifications].sort((a, b) => b.timestampMs - a.timestampMs) };
@@ -245,8 +279,27 @@ export class MockDaemon {
 
       case "wallet.publicKey":
         return { publicKey: this.walletAddress };
+      case "wallet.status":
+        return { onboarded: true, locked: this.walletLocked, protected: this.walletProtected, name: this.walletName, publicKey: this.walletAddress };
+      case "wallet.setPassphrase":
+        if (typeof params.passphrase !== "string" || params.passphrase.length < 8) throw MockDaemon.rpcError(ERR_INVALID_PARAMS, "passphrase must contain at least 8 characters");
+        this.walletPassphraseDigest = createHash("sha256").update(params.passphrase).digest("hex");
+        this.walletProtected = true;
+        this.walletName = typeof params.name === "string" && params.name.trim() ? params.name.trim().slice(0, 32) : this.walletName;
+        return {};
+      case "wallet.lock":
+        if (!this.walletProtected) throw MockDaemon.rpcError(ERR_INVALID_PARAMS, "set a passphrase before locking the wallet");
+        this.walletLocked = true;
+        return {};
+      case "wallet.unlock":
+        if (createHash("sha256").update(String(params.passphrase ?? "")).digest("hex") !== this.walletPassphraseDigest) throw MockDaemon.rpcError(ERR_USER_REJECTED, "incorrect passphrase");
+        this.walletLocked = false;
+        return {};
+      case "wallet.activity":
+        return { items: [...this.walletActivity].reverse() };
 
       case "wallet.signTransaction": {
+        if (this.walletLocked) throw MockDaemon.rpcError(ERR_USER_REJECTED, "wallet is locked");
         if (typeof params.message !== "string") {
           throw MockDaemon.rpcError(ERR_INVALID_PARAMS, '"message" must be a base64 string');
         }
@@ -278,6 +331,13 @@ export class MockDaemon {
         }
 
         const signature = edSign(null, bytes, this.walletPrivateKey);
+        const activity = {
+          id: randomUUID(), appId, label: params.label ?? "Signed payload",
+          digest: createHash("sha256").update(bytes).digest("hex"),
+          byteLength: bytes.length, timestampMs: Date.now(),
+        };
+        this.walletActivity.push(activity);
+        this.broadcast?.("wallet.activity", { activity });
         return { signature: base58(signature) };
       }
 

@@ -62,7 +62,7 @@
       "type": "array",
       "description": "Capability names. Each maps to a JSON-RPC method prefix.",
       "uniqueItems": true,
-      "maxItems": 7,
+      "maxItems": 8,
       "items": {
         "type": "string",
         "enum": [
@@ -72,7 +72,8 @@
           "sensors",
           "notifications",
           "apps",
-          "wallet"
+          "wallet",
+          "nfc"
         ]
       }
     },

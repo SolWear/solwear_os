@@ -90,6 +90,18 @@ pub struct NetworkStatus {
     pub signal: Option<u8>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NfcStatus {
+    pub available: bool,
+    pub ready: bool,
+    pub enabled: bool,
+    pub backend: String,
+    pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 /// Sensors every implementation is expected to name consistently.
 pub const KNOWN_SENSORS: &[&str] = &[
     "heartRate",
@@ -108,6 +120,8 @@ pub trait Hal: Send + Sync {
     fn set_brightness(&self, percent: u8) -> Result<(), RpcError>;
     fn read_sensor(&self, sensor: &str) -> Result<SensorReading, RpcError>;
     fn network(&self) -> NetworkStatus;
+    fn nfc_status(&self) -> NfcStatus;
+    fn set_nfc_enabled(&self, enabled: bool) -> Result<(), RpcError>;
     /// Milliseconds since the Unix epoch. Mockable so tests get a fixed clock.
     fn now_ms(&self) -> u64;
     fn timezone(&self) -> String;

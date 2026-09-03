@@ -14,8 +14,10 @@ import { ERR_USER_REJECTED, layout, solwear, SolwearRpcError } from "@solwear/sd
 const keyView = document.querySelector<HTMLElement>("#key")!;
 const messageInput = document.querySelector<HTMLTextAreaElement>("#message")!;
 const signButton = document.querySelector<HTMLButtonElement>("#sign")!;
+const nfcButton = document.querySelector<HTMLButtonElement>("#nfc")!;
 const statusView = document.querySelector<HTMLElement>("#status")!;
 const signatureView = document.querySelector<HTMLElement>("#signature")!;
+const activityView = document.querySelector<HTMLElement>("#activity")!;
 
 /** Show the ends of a base58 key, which is what a person compares by eye. */
 function abbreviate(value: string, keep = 6): string {
@@ -54,6 +56,7 @@ async function requestSignature(): Promise<void> {
     signatureView.textContent = abbreviate(signature, 8);
     signatureView.title = signature;
     setStatus("Signed");
+    await refreshActivity();
     await solwear.notifications.post({
       title: "Message signed",
       body: message.slice(0, 80),
@@ -66,6 +69,30 @@ async function requestSignature(): Promise<void> {
   }
 }
 
+async function refreshActivity(): Promise<void> {
+  const items = await solwear.wallet.activity();
+  activityView.replaceChildren(...items.slice(0, 3).map((item) => {
+    const row = document.createElement("span");
+    row.textContent = `${item.label} · ${item.digest.slice(0, 6)}…`;
+    row.title = item.digest;
+    return row;
+  }));
+  if (items.length === 0) activityView.textContent = "No signatures yet";
+}
+
+async function toggleNfc(): Promise<void> {
+  const status = await solwear.nfc.status();
+  if (!status.ready) {
+    setStatus(status.detail ?? "NFC backend is not ready", "error");
+    return;
+  }
+  await solwear.nfc.setEnabled(!status.enabled);
+  const next = await solwear.nfc.status();
+  nfcButton.classList.toggle("armed", next.enabled);
+  nfcButton.textContent = next.enabled ? "NFC armed" : "Arm NFC";
+  setStatus(next.enabled ? "Share wallet with phone" : "NFC idle");
+}
+
 async function start(): Promise<void> {
   await solwear.ready();
   layout(solwear.system.screen);
@@ -76,6 +103,13 @@ async function start(): Promise<void> {
 
   signButton.disabled = false;
   signButton.addEventListener("click", () => void requestSignature());
+  const nfc = await solwear.nfc.status();
+  nfcButton.disabled = !nfc.ready;
+  nfcButton.title = nfc.detail ?? nfc.backend;
+  nfcButton.classList.toggle("armed", nfc.enabled);
+  nfcButton.textContent = nfc.ready ? (nfc.enabled ? "NFC armed" : "Arm NFC") : "NFC unavailable";
+  nfcButton.addEventListener("click", () => void toggleNfc());
+  await refreshActivity();
 }
 
 void start().catch((error) => setStatus(String(error), "error"));

@@ -101,6 +101,8 @@ async function runQemu(args: ParsedArgs): Promise<void> {
   if (image) argv.push("--image", image);
   const port = stringFlag(args, "port");
   if (port) argv.push("--port", port);
+  const rpcPort = stringFlag(args, "rpc-port");
+  if (rpcPort) argv.push("--rpc-port", rpcPort);
 
   step("booting the aarch64 image under QEMU (this is the slow path)");
   await runProcess("/bin/sh", [script, ...argv], { inherit: true });

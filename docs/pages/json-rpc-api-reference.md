@@ -164,6 +164,42 @@ const { epochMs, timezone } = await solwear.system.time();
 
 ---
 
+## `system.stats`
+
+Runtime and Linux resource counters used by the Stats app and developer tools.
+
+**Capability:** `system` · **Parameters:** none
+
+```json
+{ "jsonrpc": "2.0", "id": 3, "method": "system.stats", "params": {} }
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "uptimeMs": 48320,
+    "platform": { "os": "linux", "arch": "aarch64" },
+    "memory": { "totalBytes": 1048576000, "availableBytes": 734003200, "processBytes": 12582912 },
+    "storage": { "totalBytes": 4294967296, "availableBytes": 3019898880 },
+    "load": { "one": 0.12, "five": 0.08, "fifteen": 0.03 },
+    "apps": 5,
+    "notifications": 1,
+    "shellConnected": true
+  }
+}
+```
+
+The QEMU guest returns genuine Linux `/proc` and filesystem values. The fast
+host emulator returns protocol-compatible process/mock values.
+
+```ts
+const stats = await solwear.system.stats();
+```
+
+---
+
 ## `power.status`
 
 Battery level and charge state.
@@ -563,6 +599,40 @@ await solwear.apps.launch({ appId: "tech.solwear.signer" });
 
 ---
 
+## Wallet state and encryption
+
+All wallet methods require the `wallet` capability. `wallet.status` reports
+`onboarded`, `locked`, `protected`, `name` and `publicKey`.
+
+```json
+{ "jsonrpc": "2.0", "id": 12, "method": "wallet.status", "params": {} }
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 12,
+  "result": { "onboarded": true, "locked": false, "protected": true, "name": "My SolWear", "publicKey": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU" }
+}
+```
+
+`wallet.setPassphrase` encrypts the key at rest with Argon2id and
+ChaCha20-Poly1305. Passphrases must contain at least eight characters. An
+encrypted wallet starts locked after a daemon restart.
+
+```ts
+await solwear.wallet.setPassphrase("correct horse battery staple", "My SolWear");
+await solwear.wallet.lock();
+await solwear.wallet.unlock("correct horse battery staple");
+const status = await solwear.wallet.status();
+const history = await solwear.wallet.activity();
+```
+
+`wallet.activity` returns recent successful signatures; it contains digests
+and labels, never private keys or signed message contents.
+
+---
+
 ## `wallet.publicKey`
 
 The device's Solana public key.
@@ -662,6 +732,40 @@ try {
   // The user declined, or the prompt timed out.
 }
 ```
+
+---
+
+## NFC wallet exchange
+
+The `nfc` capability exposes the ESP32-compatible wallet-record contract:
+
+| Method | Parameters | Result |
+| --- | --- | --- |
+| `nfc.status` | none | `{ available, ready, enabled, backend, mode, detail? }` |
+| `nfc.setEnabled` | `{ enabled: boolean }` | `{}` |
+| `nfc.walletRecord` | none | external type and wallet JSON payload |
+| `nfc.diagnostics` | none | status, I2C device, address and protocol |
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 20,
+  "result": {
+    "externalType": "solwear:wallet",
+    "payload": { "version": 1, "pubkey": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", "network": "devnet" }
+  }
+}
+```
+
+```ts
+const status = await solwear.nfc.status();
+if (status.ready) await solwear.nfc.setEnabled(true);
+const record = await solwear.nfc.walletRecord();
+```
+
+The host emulator implements the full mock contract. On Pi, arming fails with a
+HAL-unavailable error until `/dev/i2c-1` and the PN532 Type 4 worker are both
+present. See the [migration ledger](../LEGACY_MIGRATION.md).
 
 ---
 

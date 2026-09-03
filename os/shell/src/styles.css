@@ -267,6 +267,10 @@ body {
   padding: calc(var(--u) * 1.2) calc(var(--u) * 5);
 }
 
+.wallet-controls { display:flex; gap:calc(var(--u) * 1); align-items:center; }
+.wallet-controls input { min-width:0; width:calc(var(--u) * 42); }
+.mini-button { border:1px solid var(--line); border-radius:999px; background:var(--panel-high); color:var(--ink); padding:calc(var(--u) * 1) calc(var(--u) * 2.2); font:inherit; }
+
 .empty {
   color: var(--ink-faint);
   font-size: calc(var(--u) * 4);

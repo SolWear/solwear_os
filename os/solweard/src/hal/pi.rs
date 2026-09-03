@@ -8,28 +8,37 @@
 //! so every reader degrades to a sane default instead of failing the daemon.
 
 use super::{
-    sensor_unavailable, system_now_ms, Hal, NetworkStatus, PowerStatus, Screen, ScreenShape,
-    SensorReading,
+    sensor_unavailable, system_now_ms, Hal, NetworkStatus, NfcStatus, PowerStatus, Screen,
+    ScreenShape, SensorReading,
 };
 use crate::error::{RpcError, HAL_UNAVAILABLE};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const POWER_SUPPLY_DIR: &str = "/sys/class/power_supply";
 const BACKLIGHT_DIR: &str = "/sys/class/backlight";
 const IIO_DIR: &str = "/sys/bus/iio/devices";
 const THERMAL_ZONE: &str = "/sys/class/thermal/thermal_zone0/temp";
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PiHal {
     screen: Screen,
+    nfc_enabled: AtomicBool,
 }
 
 impl PiHal {
     pub fn new() -> PiHal {
         PiHal {
             screen: detect_screen(),
+            nfc_enabled: AtomicBool::new(false),
         }
+    }
+}
+
+impl Default for PiHal {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -235,6 +244,41 @@ impl Hal for PiHal {
             };
         }
         NetworkStatus::default()
+    }
+
+    fn nfc_status(&self) -> NfcStatus {
+        let i2c = Path::new("/dev/i2c-1").exists();
+        // PN532 target-mode requires a dedicated userspace worker. Merely
+        // finding an I2C controller is not enough to claim that it is ready.
+        let worker = Path::new("/usr/lib/solwear/solwear-nfc-pn532").exists();
+        NfcStatus {
+            available: i2c,
+            ready: i2c && worker,
+            enabled: self.nfc_enabled.load(Ordering::Relaxed) && i2c && worker,
+            backend: "pn532-i2c".to_string(),
+            mode: "type4-wallet".to_string(),
+            detail: Some(if !i2c {
+                "/dev/i2c-1 is unavailable".to_string()
+            } else if !worker {
+                "PN532 target-mode worker is not installed".to_string()
+            } else {
+                "PN532 target-mode worker detected".to_string()
+            }),
+        }
+    }
+
+    fn set_nfc_enabled(&self, enabled: bool) -> Result<(), RpcError> {
+        let status = self.nfc_status();
+        if enabled && !status.ready {
+            return Err(RpcError::new(
+                HAL_UNAVAILABLE,
+                status
+                    .detail
+                    .unwrap_or_else(|| "NFC is unavailable".to_string()),
+            ));
+        }
+        self.nfc_enabled.store(enabled, Ordering::Relaxed);
+        Ok(())
     }
 
     fn now_ms(&self) -> u64 {

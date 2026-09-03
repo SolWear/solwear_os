@@ -130,6 +130,7 @@ pub async fn dispatch(
         // whether the watch is online. Guarded by the `system` capability.
         "system.network" => Ok(serde_json::to_value(state.hal.network())
             .map_err(|e| RpcError::internal(e.to_string()))?),
+        "system.stats" => Ok(system_stats(state)),
 
         "power.status" => Ok(serde_json::to_value(state.hal.power())
             .map_err(|e| RpcError::internal(e.to_string()))?),
@@ -149,6 +150,32 @@ pub async fn dispatch(
             let reading = state.hal.read_sensor(&sensor)?;
             serde_json::to_value(reading).map_err(|e| RpcError::internal(e.to_string()))
         }
+
+        "nfc.status" => serde_json::to_value(state.hal.nfc_status())
+            .map_err(|e| RpcError::internal(e.to_string())),
+        "nfc.setEnabled" => {
+            let enabled = params
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| RpcError::invalid_params("`enabled` must be a boolean"))?;
+            state.hal.set_nfc_enabled(enabled)?;
+            state.push_event("nfc.statusChanged", json!({ "enabled": enabled }));
+            Ok(json!({}))
+        }
+        "nfc.walletRecord" => Ok(json!({
+            "externalType": "solwear:wallet",
+            "payload": {
+                "version": 1,
+                "pubkey": state.wallet.public_key(),
+                "network": "devnet",
+            }
+        })),
+        "nfc.diagnostics" => Ok(json!({
+            "status": state.hal.nfc_status(),
+            "expectedDevice": "/dev/i2c-1",
+            "address": "0x24",
+            "protocol": "NFC Forum Type 4 / external type NDEF",
+        })),
 
         "notifications.list" => Ok(json!({ "items": state.notifications() })),
         "notifications.post" => {
@@ -225,6 +252,29 @@ pub async fn dispatch(
         }
 
         "wallet.publicKey" => Ok(json!({ "publicKey": state.wallet.public_key() })),
+        "wallet.status" => Ok(json!({
+            "onboarded": true,
+            "locked": state.wallet.is_locked(),
+            "protected": state.wallet.is_protected(),
+            "name": state.wallet.name(),
+            "publicKey": state.wallet.public_key(),
+        })),
+        "wallet.setPassphrase" => {
+            let passphrase = require_string(params, "passphrase")?;
+            let name = optional_string(params, "name").unwrap_or_else(|| "SolWear".to_string());
+            state.wallet.set_passphrase(&passphrase, &name)?;
+            Ok(json!({}))
+        }
+        "wallet.lock" => {
+            state.wallet.lock()?;
+            Ok(json!({}))
+        }
+        "wallet.unlock" => {
+            let passphrase = require_string(params, "passphrase")?;
+            state.wallet.unlock(&passphrase)?;
+            Ok(json!({}))
+        }
+        "wallet.activity" => Ok(json!({ "items": state.wallet_activity() })),
         "wallet.signTransaction" => sign_transaction(state, caller, params).await,
 
         // Privileged shell plumbing.
@@ -249,6 +299,81 @@ pub async fn dispatch(
 
         other => Err(RpcError::method_not_found(other)),
     }
+}
+
+fn system_stats(state: &AppState) -> Value {
+    let (memory_total_kib, memory_available_kib) = memory_info();
+    let process_rss_kib = process_rss();
+    let load = std::fs::read_to_string("/proc/loadavg")
+        .ok()
+        .and_then(|text| {
+            let values: Vec<f64> = text
+                .split_whitespace()
+                .take(3)
+                .filter_map(|value| value.parse().ok())
+                .collect();
+            (values.len() == 3).then_some(values)
+        })
+        .unwrap_or_else(|| vec![0.0, 0.0, 0.0]);
+    let (storage_total_kib, storage_available_kib) = storage_info(&state.config.data_dir);
+    json!({
+        "uptimeMs": state.uptime_ms(),
+        "platform": { "os": std::env::consts::OS, "arch": std::env::consts::ARCH },
+        "memory": {
+            "totalBytes": memory_total_kib * 1024,
+            "availableBytes": memory_available_kib * 1024,
+            "processBytes": process_rss_kib * 1024,
+        },
+        "storage": {
+            "totalBytes": storage_total_kib * 1024,
+            "availableBytes": storage_available_kib * 1024,
+        },
+        "load": { "one": load[0], "five": load[1], "fifteen": load[2] },
+        "apps": state.apps.list().len(),
+        "notifications": state.notification_count(),
+        "shellConnected": state.shell_connected(),
+    })
+}
+
+fn memory_info() -> (u64, u64) {
+    let text = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let field = |name: &str| -> u64 {
+        text.lines()
+            .find(|line| line.starts_with(name))
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0)
+    };
+    (field("MemTotal:"), field("MemAvailable:"))
+}
+
+fn process_rss() -> u64 {
+    let text = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    text.lines()
+        .find(|line| line.starts_with("VmRSS:"))
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
+}
+
+fn storage_info(path: &std::path::Path) -> (u64, u64) {
+    let output = std::process::Command::new("df")
+        .args(["-Pk"])
+        .arg(path)
+        .output();
+    let Ok(output) = output else { return (0, 0) };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let Some(line) = text.lines().last() else {
+        return (0, 0);
+    };
+    let columns: Vec<&str> = line.split_whitespace().collect();
+    if columns.len() < 6 {
+        return (0, 0);
+    }
+    (
+        columns[1].parse().unwrap_or(0),
+        columns[3].parse().unwrap_or(0),
+    )
 }
 
 async fn sign_transaction(
@@ -287,7 +412,13 @@ async fn sign_transaction(
     // a signature.
     state.request_confirmation(&requested_app, summary).await?;
 
-    let signature = state.wallet.sign(&bytes);
+    let signature = state.wallet.sign(&bytes)?;
+    state.record_wallet_activity(
+        requested_app.clone(),
+        optional_string(params, "label").unwrap_or_else(|| "Signed payload".to_string()),
+        crate::package::hex_sha256(&bytes),
+        bytes.len(),
+    );
     tracing::info!(app = %requested_app, bytes = bytes.len(), "transaction signed after user confirmation");
     Ok(json!({ "signature": signature }))
 }

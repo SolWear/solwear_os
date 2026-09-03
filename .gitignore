@@ -24,6 +24,7 @@ coverage/
 docs/dist/
 image/out/
 image/work/
+emulator/qemu/cache/
 *.swa
 # The first-party packages the registry index pins are an exception: their
 # SHA-256 digests are published in index.json, so the exact bytes have to be

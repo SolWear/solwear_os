@@ -11,6 +11,7 @@ export const CAPABILITIES = [
   "notifications",
   "apps",
   "wallet",
+  "nfc",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

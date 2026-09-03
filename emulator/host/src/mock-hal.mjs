@@ -75,6 +75,43 @@ export class MockHal {
     return {};
   }
 
+  /** Mutable controls used only by the developer cockpit. */
+  control(name, value) {
+    switch (name) {
+      case "battery":
+        this.script.batteryPercent = Math.max(0, Math.min(100, Number(value)));
+        this.startedAt = Date.now();
+        break;
+      case "charging":
+        this.script.charging = value === true || value === "true" || value === "1";
+        this.startedAt = Date.now();
+        break;
+      case "brightness":
+        this.setBrightness(Number(value));
+        break;
+      case "steps":
+      case "heartRate":
+      case "temperature":
+      case "ambientLight":
+        this.script.sensors = { ...(this.script.sensors ?? {}), [name]: Number(value) };
+        if (name === "steps") this.script.steps = Number(value);
+        break;
+      default:
+        throw new Error(`unknown HAL control "${name}"`);
+    }
+  }
+
+  snapshot() {
+    const sensors = {};
+    for (const name of KNOWN_SENSORS) sensors[name] = this.read(name);
+    return {
+      power: this.power(),
+      brightness: this.brightness,
+      sensors,
+      startedAt: this.startedAt,
+    };
+  }
+
   /** @param {string} sensor */
   read(sensor) {
     const scripted = this.script.sensors?.[sensor];
